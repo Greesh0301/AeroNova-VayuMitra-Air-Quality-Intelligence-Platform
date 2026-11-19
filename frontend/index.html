@@ -29,32 +29,98 @@
     <div class="cloud cloud-two"></div>
     <div class="cloud cloud-three"></div>
 
-    <span class="floating-leaf leaf-one">🍃</span>
-    <span class="floating-leaf leaf-two">🍃</span>
-    <span class="floating-leaf leaf-three">🌿</span>
-
-    <span class="bird bird-one">⌁</span>
-    <span class="bird bird-two">⌁</span>
+   
 </div>
 
 <!-- NAVIGATION -->
-<header class="topbar">
 
-    <a href="#welcome" class="brand">
-        <span class="brand-leaf">🌿</span>
 
-        <span>
-            <b>Vayu<span>Mitra</span></b>
-            <small>Cleaner Air. Healthier Tomorrow.</small>
-        </span>
+   <header class="navbar">
+
+    <!-- Logo -->
+    <a href="index.html" class="logo">
+        <span class="logo-icon">🌿</span>
+        <span>VayuMitra</span>
     </a>
 
-    <nav>
-        <a href="#welcome" class="active">⌂ <span>Home</span></a>
-        <a href="#trend">▥ <span>Insights</span></a>
-        <a href="#pollutants">⌖ <span>Air Data</span></a>
-        <a href="#community">♧ <span>Community</span></a>
+    <!-- Navigation Links -->
+    <nav class="nav-links" id="navLinks">
+
+        <a href="index.html" class="nav-item active">
+            <i data-lucide="house"></i>
+            <span>Home</span>
+        </a>
+
+        <a href="map.html" class="nav-item">
+            <i data-lucide="map-pin"></i>
+            <span>Map</span>
+        </a>
+
+        <a href="reports.html" class="nav-item">
+            <i data-lucide="chart-no-axes-column-increasing"></i>
+            <span>Reports</span>
+        </a>
+
+        <a href="prediction.html" class="nav-item">
+            <i data-lucide="trending-up"></i>
+            <span>Prediction</span>
+        </a>
+
+        <!-- More Dropdown -->
+        <div class="dropdown">
+            <button class="nav-item dropdown-btn"
+                    id="moreBtn"
+                    aria-expanded="false"
+                    aria-controls="moreMenu">
+                <span>More</span>
+                <i data-lucide="chevron-down"></i>
+            </button>
+
+            <div class="dropdown-menu" id="moreMenu" hidden>
+                <a href="alerts.html">Alerts</a>
+                <a href="community.html">Community</a>
+                <a href="insights.html">Insights</a>
+            </div>
+        </div>
+
     </nav>
+
+    <!-- Weather -->
+    <div class="weather">
+        <i data-lucide="sun"></i>
+        <div>
+            <strong id="navTemp">28°C</strong>
+            <small>Mumbai · Partly Cloudy</small>
+        </div>
+    </div>
+
+    <!-- Profile -->
+    <div class="profile dropdown">
+        <button class="profile-btn"
+                id="profileBtn"
+                aria-expanded="false"
+                aria-controls="profileMenu"
+                aria-label="Open profile menu">
+            <i data-lucide="user-round"></i>
+            <i data-lucide="chevron-down"></i>
+        </button>
+
+        <div class="dropdown-menu profile-menu"
+             id="profileMenu" hidden>
+            <a href="settings.html">Settings</a>
+            <a href="index.html">Logout</a>
+        </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <button class="mobile-toggle"
+            id="mobileToggle"
+            aria-label="Open navigation menu"
+            aria-expanded="false">
+        <i data-lucide="menu"></i>
+    </button>
+
+</header>
 
     <div class="top-status">
         <span class="live-dot"></span>
@@ -469,7 +535,8 @@
         </footer>
 
     </section>
-
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="script.js"></script>
 </main>
 
 </body>
