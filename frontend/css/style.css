@@ -1220,7 +1220,7 @@ footer span:first-child {
     100% {
         transform: scale(1.1) translate(10px, 5px);
     }
-=======
+
 :root {
     --ink: #173b4c;
     --muted: #617d89;
