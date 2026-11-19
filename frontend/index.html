@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>VayuMitra | Cleaner Air, Healthier Tomorrow</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet"
+          href="css/style.css">
+
+    <script defer
+            src="js/app.js"></script>
+</head>
+
+<body>
+
+<!-- ANIMATED BACKGROUND -->
+<div class="sky">
+    <div class="sun-glow"></div>
+
+    <div class="cloud cloud-one"></div>
+    <div class="cloud cloud-two"></div>
+    <div class="cloud cloud-three"></div>
+
+    <span class="floating-leaf leaf-one">🍃</span>
+    <span class="floating-leaf leaf-two">🍃</span>
+    <span class="floating-leaf leaf-three">🌿</span>
+
+    <span class="bird bird-one">⌁</span>
+    <span class="bird bird-two">⌁</span>
+</div>
+
+<!-- NAVIGATION -->
+<header class="topbar">
+
+    <a href="#welcome" class="brand">
+        <span class="brand-leaf">🌿</span>
+
+        <span>
+            <b>Vayu<span>Mitra</span></b>
+            <small>Cleaner Air. Healthier Tomorrow.</small>
+        </span>
+    </a>
+
+    <nav>
+        <a href="#welcome" class="active">⌂ <span>Home</span></a>
+        <a href="#trend">▥ <span>Insights</span></a>
+        <a href="#pollutants">⌖ <span>Air Data</span></a>
+        <a href="#community">♧ <span>Community</span></a>
+    </nav>
+
+    <div class="top-status">
+        <span class="live-dot"></span>
+        <span id="updateStatus">Connecting to live data</span>
+    </div>
+
+</header>
+
+<main>
+
+    <!-- WELCOME SECTION -->
+    <section class="screen welcome-screen" id="welcome">
+
+        <div class="welcome-copy">
+
+            <p class="eyebrow">
+                YOUR DAILY BREATH OF FRESH AIR
+            </p>
+
+            <h1 id="greeting">Good morning!</h1>
+
+            <p class="subheading">
+                A little more awareness.
+                A lot more fresh air.
+            </p>
+
+            <div class="location-line">
+                ⌖
+                <span id="placeName">Finding your location...</span>
+                <span class="separator">•</span>
+                <span id="dateText">Checking date...</span>
+            </div>
+
+            <div class="hero-actions">
+                <a href="#air-quality" class="primary-btn">
+                    Explore air quality ↓
+                </a>
+
+                <button id="locateBtn" class="soft-btn">
+                    ◎ Use my location
+                </button>
+            </div>
+
+        </div>
+
+        <div class="hero-art">
+            <div class="hero-orbit"></div>
+            <div class="hero-plant">🌱</div>
+            <div class="hero-cloud">☁️</div>
+
+            <div class="hero-caption">
+                Breathe easy.<br>
+                <b>Live consciously.</b>
+            </div>
+        </div>
+
+        <!-- BOTH CHARACTERS IN ONE IMAGE -->
+        <div class="vayu-scene">
+            <img
+                src="{{ url_for('static', filename='images/good.png') }}"
+                id="aqiCharacters"
+                class="aqi-characters"
+                alt="VayuMitra characters">
+        </div>
+
+        <div class="scroll-cue">
+            SCROLL TO EXPLORE ↓
+        </div>
+
+    </section>
+
+    <!-- AIR QUALITY AND WEATHER -->
+    <section class="screen" id="air-quality">
+
+        <div class="section-heading">
+            <p class="eyebrow">01 / RIGHT NOW</p>
+
+            <h2>Your air, at a glance.</h2>
+
+            <p>
+                Live model-based air quality and weather
+                for your selected location.
+            </p>
+        </div>
+
+        <div class="feature-grid">
+
+            <!-- AQI CARD -->
+            <article class="glass-card aqi-card">
+
+                <div class="card-kicker">
+                    CURRENT AIR QUALITY
+                    <span class="live-pill">● LIVE</span>
+                </div>
+
+                <div class="aqi-layout">
+
+                    <div class="gauge-wrap">
+                        <div class="gauge">
+                            <div class="gauge-inner">
+                                <strong id="aqiValue">--</strong>
+                                <span>AQI</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="aqi-copy">
+
+                        <span class="status-chip" id="aqiStatus">
+                            Loading
+                        </span>
+
+                        <h3 id="aqiHeadline">
+                            Checking the air around you
+                        </h3>
+
+                        <p id="aqiAdvice">
+                            Live readings will appear here.
+                        </p>
+
+                    </div>
+                </div>
+
+                <div class="scale">
+                    <span>Good</span>
+                    <span>Moderate</span>
+                    <span>Poor</span>
+                    <span>Very poor</span>
+                </div>
+
+                <p class="tiny-note">
+                    US AQI scale. Forecast model estimate,
+                    not a local monitoring-station reading.
+                </p>
+
+            </article>
+
+            <!-- WEATHER CARD -->
+            <article class="glass-card weather-card">
+
+                <div class="card-kicker">LOCAL WEATHER</div>
+
+                <div class="weather-main">
+                    <span id="weatherIcon">⛅</span>
+                    <strong id="temperature">--°C</strong>
+                </div>
+
+                <h3 id="weatherText">Loading conditions...</h3>
+
+                <div class="weather-stats">
+
+                    <div>
+                        <small>Feels like</small>
+                        <b id="feelsLike">--°C</b>
+                    </div>
+
+                    <div>
+                        <small>Humidity</small>
+                        <b id="humidity">--%</b>
+                    </div>
+
+                    <div>
+                        <small>Wind</small>
+                        <b id="wind">-- km/h</b>
+                    </div>
+
+                </div>
+
+                <p class="tiny-note" id="weatherTime">
+                    Waiting for live weather...
+                </p>
+
+            </article>
+
+        </div>
+
+    </section>
+
+    <!-- AQI TREND -->
+    <section class="screen" id="trend">
+
+        <div class="section-heading">
+            <p class="eyebrow">02 / THE DAY AHEAD</p>
+
+            <h2>Follow the air trend.</h2>
+
+            <p>
+                Hourly AQI forecast helps you plan
+                your day more thoughtfully.
+            </p>
+        </div>
+
+        <article class="glass-card trend-card">
+
+            <div class="card-title-row">
+                <div>
+                    <span class="mini-icon">↗</span>
+                    <h3>Next 24 hours</h3>
+                </div>
+
+                <span class="forecast-tag">
+                    HOURLY FORECAST
+                </span>
+            </div>
+
+            <div class="chart-wrap">
+                <svg id="trendChart"
+                     viewBox="0 0 900 280"
+                     role="img"
+                     aria-label="Hourly air quality trend">
+
+                    <text x="450" y="140"
+                          text-anchor="middle"
+                          fill="#55718a">
+                        Waiting for live forecast...
+                    </text>
+
+                </svg>
+            </div>
+
+            <div class="trend-summary">
+
+                <div>
+                    <small>Current AQI</small>
+                    <b id="trendCurrent">--</b>
+                </div>
+
+                <div>
+                    <small>Forecast high</small>
+                    <b id="trendHigh">--</b>
+                </div>
+
+                <div>
+                    <small>Forecast low</small>
+                    <b id="trendLow">--</b>
+                </div>
+
+            </div>
+
+        </article>
+
+    </section>
+
+    <!-- POLLUTANTS -->
+    <section class="screen" id="pollutants">
+
+        <div class="section-heading">
+            <p class="eyebrow">03 / WHAT'S IN THE AIR</p>
+
+            <h2>Know what you breathe.</h2>
+
+            <p>
+                Current pollutant concentrations
+                returned by the air-quality model.
+            </p>
+        </div>
+
+        <article class="glass-card pollutant-card">
+
+            <div class="card-title-row">
+                <div>
+                    <span class="mini-icon">▥</span>
+                    <h3>Pollutant breakdown</h3>
+                </div>
+
+                <span class="forecast-tag">μg/m³ unless noted</span>
+            </div>
+
+            <div class="pollutant-list">
+
+                <div class="pollutant-row">
+                    <span class="pollutant-dot green"></span>
+                    <span>PM2.5</span>
+                    <div class="bar"><i id="barPm25"></i></div>
+                    <b id="pm25">--</b>
+                </div>
+
+                <div class="pollutant-row">
+                    <span class="pollutant-dot blue"></span>
+                    <span>PM10</span>
+                    <div class="bar"><i id="barPm10"></i></div>
+                    <b id="pm10">--</b>
+                </div>
+
+                <div class="pollutant-row">
+                    <span class="pollutant-dot purple"></span>
+                    <span>NO₂</span>
+                    <div class="bar"><i id="barNo2"></i></div>
+                    <b id="no2">--</b>
+                </div>
+
+                <div class="pollutant-row">
+                    <span class="pollutant-dot orange"></span>
+                    <span>CO</span>
+                    <div class="bar"><i id="barCo"></i></div>
+                    <b id="co">--</b>
+                </div>
+
+                <div class="pollutant-row">
+                    <span class="pollutant-dot teal"></span>
+                    <span>O₃</span>
+                    <div class="bar"><i id="barO3"></i></div>
+                    <b id="o3">--</b>
+                </div>
+
+                <div class="pollutant-row">
+                    <span class="pollutant-dot grey"></span>
+                    <span>SO₂</span>
+                    <div class="bar"><i id="barSo2"></i></div>
+                    <b id="so2">--</b>
+                </div>
+
+            </div>
+
+            <p class="tiny-note">
+                Values are hourly model estimates.
+                A dash means the source did not return a value.
+            </p>
+
+        </article>
+
+    </section>
+
+    <!-- ALERTS -->
+    <section class="screen" id="alerts">
+
+        <div class="section-heading">
+            <p class="eyebrow">04 / YOUR WELLBEING</p>
+
+            <h2>A little guidance goes a long way.</h2>
+
+            <p>
+                Simple suggestions based on the
+                latest available AQI reading.
+            </p>
+        </div>
+
+        <div class="feature-grid alert-grid">
+
+            <article class="glass-card alert-card">
+
+                <div class="alert-symbol">🍃</div>
+
+                <div>
+                    <span class="card-kicker">AIR QUALITY NOTE</span>
+
+                    <h3 id="alertTitle">
+                        Checking your local air...
+                    </h3>
+
+                    <p id="alertMessage">
+                        Your guidance will update
+                        when the live AQI is available.
+                    </p>
+                </div>
+
+            </article>
+
+            <article class="glass-card tips-card">
+
+                <div class="card-kicker">QUICK INSIGHTS</div>
+
+                <div class="tip">
+                    <span>🚶</span>
+                    <p id="tipOne">Outdoor activity guidance will appear here.</p>
+                </div>
+
+                <div class="tip">
+                    <span>🌿</span>
+                    <p id="tipTwo">Keep following clean-air habits.</p>
+                </div>
+
+                <div class="tip">
+                    <span>💨</span>
+                    <p id="tipThree">Check the forecast before planning outdoor time.</p>
+                </div>
+
+            </article>
+
+        </div>
+
+    </section>
+
+    <!-- COMMUNITY -->
+    <section class="screen community-screen" id="community">
+
+        <div class="community-panel glass-card">
+
+            <div class="community-plant">🌳</div>
+
+            <p class="eyebrow">
+                05 / SMALL STEPS. BIG CHANGE.
+            </p>
+
+            <h2>Together for a cleaner tomorrow.</h2>
+
+            <p>
+                Choose cleaner travel, save energy,
+                plant native trees and help keep
+                the air around you healthier.
+            </p>
+
+            <div class="pledges">
+                <span>🌱 Plant trees</span>
+                <span>🚲 Choose clean travel</span>
+                <span>💚 Breathe better</span>
+            </div>
+
+            <button class="primary-btn" id="backTop">
+                Back to the top ↑
+            </button>
+
+        </div>
+
+        <footer>
+            <span>VayuMitra</span>
+
+            <span>
+                Live data by Open-Meteo •
+                Refreshes every 15 minutes
+            </span>
+        </footer>
+
+    </section>
+
+</main>
+
+</body>
+</html>
