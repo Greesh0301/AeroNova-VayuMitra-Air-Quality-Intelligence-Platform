@@ -1193,3 +1193,30 @@ footer span:first-child {
         flex-direction: column;
     }
 }
+
+.animated-background {
+    position: fixed;
+    inset: -2%;
+    z-index: -2;
+
+    background-image: url("../images/mumbai-bg.png");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+
+    animation: backgroundMovement 35s ease-in-out infinite alternate;
+}
+
+@keyframes backgroundMovement {
+    0% {
+        transform: scale(1) translate(0, 0);
+    }
+
+    50% {
+        transform: scale(1.06) translate(-10px, -5px);
+    }
+
+    100% {
+        transform: scale(1.1) translate(10px, 5px);
+    }
+}
