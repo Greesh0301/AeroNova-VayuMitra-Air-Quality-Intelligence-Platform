@@ -6,12 +6,13 @@ import json
 import math
 import os
 import re
+import secrets
 import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import Config, DATABASE_DIR, DATABASE_PATH, UPLOAD_FOLDER
@@ -713,6 +714,15 @@ def init_db() -> None:
                 FOREIGN KEY (profile_id) REFERENCES user_profiles(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                profile_id INTEGER NOT NULL,
+                token TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                FOREIGN KEY (profile_id) REFERENCES user_profiles(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_readings_city_time
                 ON environmental_readings(city, recorded_at DESC);
             CREATE INDEX IF NOT EXISTS idx_alerts_city_time
@@ -721,6 +731,8 @@ def init_db() -> None:
                 ON community_reports(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_diary_date
                 ON exposure_diary(entry_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_sessions_token
+                ON user_sessions(token);
             """
         )
 
@@ -729,16 +741,31 @@ def init_db() -> None:
         if "hours_per_day" not in loc_cols:
             cur.execute("ALTER TABLE personal_locations ADD COLUMN hours_per_day REAL NOT NULL DEFAULT 8.0")
 
-        # Ensure default profile row exists
-        row = cur.execute("SELECT id FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
+        # Ensure default profile row exists with demo login credentials
+        row = cur.execute("SELECT id, email, password_hash FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
         if not row:
             now = utc_now_iso()
+            salt_hex, pw_hash = _hash_password("vayumitra123")
             cur.execute(
                 """
-                INSERT INTO user_profiles (name, email, bio, preferred_city, preferred_lat, preferred_lon, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO user_profiles (
+                    name, email, bio, preferred_city, preferred_lat, preferred_lon,
+                    password_hash, password_salt, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                ("Aarav Sharma", "", "Environmental observer tracking urban air quality.", Config.DEFAULT_CITY, 19.0760, 72.8777, now, now),
+                (
+                    "Aarav Sharma",
+                    "aarav@vayumitra.in",
+                    "Environmental observer tracking urban air quality.",
+                    Config.DEFAULT_CITY,
+                    19.0760,
+                    72.8777,
+                    pw_hash,
+                    salt_hex,
+                    now,
+                    now,
+                ),
             )
             profile_id = cur.lastrowid
             cur.execute(
@@ -758,6 +785,20 @@ def init_db() -> None:
             profile_row_id = profile_id
         else:
             profile_row_id = row["id"]
+            if not row["password_hash"] or not row["email"]:
+                now = utc_now_iso()
+                email_to_set = row["email"] or "aarav@vayumitra.in"
+                if not row["password_hash"]:
+                    salt_hex, pw_hash = _hash_password("vayumitra123")
+                    cur.execute(
+                        "UPDATE user_profiles SET email = ?, password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?",
+                        (email_to_set, pw_hash, salt_hex, now, profile_row_id),
+                    )
+                elif not row["email"]:
+                    cur.execute(
+                        "UPDATE user_profiles SET email = ?, updated_at = ? WHERE id = ?",
+                        (email_to_set, now, profile_row_id),
+                    )
 
         rep_cnt = cur.execute("SELECT COUNT(*) AS cnt FROM community_reports").fetchone()["cnt"]
         if rep_cnt == 0:
@@ -1070,11 +1111,212 @@ def classify_aqi(aqi_value: Optional[float], standard: str = "NAQI") -> Dict[str
     }
 
 
-def get_profile_bundle() -> Dict[str, Any]:
+def _hash_password(password: str, salt: Optional[bytes] = None) -> Tuple[str, str]:
+    salt_bytes = salt if salt is not None else os.urandom(16)
+    pw_hash = hashlib.pbkdf2_hmac("sha256", str(password).encode("utf-8"), salt_bytes, 100_000).hex()
+    return salt_bytes.hex(), pw_hash
+
+
+def _verify_password(password: str, pw_hash: str, pw_salt: str) -> bool:
+    if not pw_hash or not pw_salt:
+        return False
+    try:
+        expected = hashlib.pbkdf2_hmac(
+            "sha256",
+            str(password).encode("utf-8"),
+            bytes.fromhex(pw_salt),
+            100_000,
+        ).hex()
+        return secrets.compare_digest(expected, pw_hash)
+    except Exception:
+        return False
+
+
+def _resolve_profile_row(conn: sqlite3.Connection, auth_token: Optional[str] = None) -> sqlite3.Row:
+    if auth_token:
+        tok = str(auth_token).strip()
+        if tok:
+            sess = conn.execute(
+                """
+                SELECT p.*
+                FROM user_sessions s
+                JOIN user_profiles p ON p.id = s.profile_id
+                WHERE s.token = ? AND s.expires_at > ?
+                LIMIT 1
+                """,
+                (tok, utc_now_iso()),
+            ).fetchone()
+            if sess:
+                return sess
+    return conn.execute("SELECT * FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
+
+
+def _create_session_token(conn: sqlite3.Connection, profile_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=14)
+    conn.execute(
+        "INSERT INTO user_sessions (profile_id, token, created_at, expires_at) VALUES (?, ?, ?, ?)",
+        (profile_id, token, now.replace(microsecond=0).isoformat(), expires.replace(microsecond=0).isoformat()),
+    )
+    return token
+
+
+def register_user(name: str, email: str, password: str, preferred_city: str = "Mumbai") -> Dict[str, Any]:
+    name = (name or "").strip()
+    email = (email or "").strip().lower()
+    pw = str(password or "")
+    city_in = (preferred_city or Config.DEFAULT_CITY).strip() or Config.DEFAULT_CITY
+
+    if len(name) < 2:
+        raise ValueError("Please enter your full name (at least 2 characters).")
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise ValueError("Please enter a valid email address.")
+    if len(pw) < 6:
+        raise ValueError("Password must be at least 6 characters long.")
+
+    geo = resolve_location(city=city_in)
+    if not geo:
+        raise ValueError("Preferred city must be located within India (e.g., Mumbai, Delhi, Bengaluru).")
+
+    init_db()
+    conn = get_db_connection()
+    now = utc_now_iso()
+    try:
+        existing = conn.execute("SELECT id FROM user_profiles WHERE LOWER(email) = ? LIMIT 1", (email,)).fetchone()
+        if existing:
+            raise ValueError("An account with this email already exists. Please sign in instead.")
+
+        salt_hex, pw_hash = _hash_password(pw)
+        cur = conn.execute(
+            """
+            INSERT INTO user_profiles (
+                name, email, bio, preferred_city, preferred_lat, preferred_lon,
+                password_hash, password_salt, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                name,
+                email,
+                "VayuMitra environmental citizen tracking air quality.",
+                geo["name"],
+                geo["latitude"],
+                geo["longitude"],
+                pw_hash,
+                salt_hex,
+                now,
+                now,
+            ),
+        )
+        pid = cur.lastrowid
+        conn.execute(
+            """
+            INSERT INTO user_preferences (profile_id, default_city, auto_detect_location, temp_unit, pollutant_unit, aqi_standard, share_location, anonymous_reports, updated_at)
+            VALUES (?, ?, 0, 'C', 'ugm3', 'NAQI', 1, 0, ?)
+            """,
+            (pid, geo["name"], now),
+        )
+        conn.execute(
+            """
+            INSERT INTO notification_preferences (profile_id, enabled, aqi_warnings, location_alerts, aqi_threshold, pm25_threshold, browser_notifications, updated_at)
+            VALUES (?, 1, 1, 1, 100, 35.0, 0, ?)
+            """,
+            (pid, now),
+        )
+        token = _create_session_token(conn, pid)
+        conn.commit()
+    finally:
+        conn.close()
+
+    bundle = get_profile_bundle(auth_token=token)
+    return {
+        "token": token,
+        "authenticated": True,
+        "user": bundle["profile"],
+        "bundle": bundle,
+        "message": f"Welcome to VayuMitra, {bundle['profile']['name']}!",
+    }
+
+
+def login_user(email: str, password: str) -> Dict[str, Any]:
+    email_norm = (email or "").strip().lower()
+    pw = str(password or "")
+    if not email_norm or not pw:
+        raise ValueError("Please enter both email and password.")
+
     init_db()
     conn = get_db_connection()
     try:
-        profile = conn.execute("SELECT * FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
+        profile = conn.execute(
+            "SELECT * FROM user_profiles WHERE LOWER(email) = ? ORDER BY id ASC LIMIT 1",
+            (email_norm,),
+        ).fetchone()
+        if not profile or not _verify_password(pw, profile["password_hash"], profile["password_salt"]):
+            raise ValueError("Invalid email or password.")
+
+        token = _create_session_token(conn, profile["id"])
+        conn.commit()
+    finally:
+        conn.close()
+
+    bundle = get_profile_bundle(auth_token=token)
+    return {
+        "token": token,
+        "authenticated": True,
+        "user": bundle["profile"],
+        "bundle": bundle,
+        "message": f"Signed in as {bundle['profile']['name']}.",
+    }
+
+
+def logout_user(auth_token: Optional[str] = None) -> Dict[str, Any]:
+    init_db()
+    if auth_token:
+        conn = get_db_connection()
+        try:
+            conn.execute("DELETE FROM user_sessions WHERE token = ?", (str(auth_token).strip(),))
+            conn.commit()
+        finally:
+            conn.close()
+    return {"authenticated": False, "message": "You have been logged out of VayuMitra."}
+
+
+def get_auth_session(auth_token: Optional[str] = None) -> Dict[str, Any]:
+    init_db()
+    if not auth_token or not str(auth_token).strip():
+        return {"authenticated": False, "user": None}
+    conn = get_db_connection()
+    try:
+        sess = conn.execute(
+            """
+            SELECT p.*
+            FROM user_sessions s
+            JOIN user_profiles p ON p.id = s.profile_id
+            WHERE s.token = ? AND s.expires_at > ?
+            LIMIT 1
+            """,
+            (str(auth_token).strip(), utc_now_iso()),
+        ).fetchone()
+        if not sess:
+            return {"authenticated": False, "user": None}
+        return {
+            "authenticated": True,
+            "user": {
+                "id": sess["id"],
+                "name": sess["name"],
+                "email": sess["email"],
+                "preferred_city": sess["preferred_city"],
+            },
+        }
+    finally:
+        conn.close()
+
+
+def get_profile_bundle(auth_token: Optional[str] = None) -> Dict[str, Any]:
+    init_db()
+    conn = get_db_connection()
+    try:
+        profile = _resolve_profile_row(conn, auth_token)
         prefs = conn.execute("SELECT * FROM user_preferences WHERE profile_id = ?", (profile["id"],)).fetchone()
         notif = conn.execute("SELECT * FROM notification_preferences WHERE profile_id = ?", (profile["id"],)).fetchone()
         return {
@@ -1113,12 +1355,12 @@ def get_profile_bundle() -> Dict[str, Any]:
         conn.close()
 
 
-def update_profile_bundle(payload: Dict[str, Any]) -> Dict[str, Any]:
+def update_profile_bundle(payload: Dict[str, Any], auth_token: Optional[str] = None) -> Dict[str, Any]:
     init_db()
     conn = get_db_connection()
     now = utc_now_iso()
     try:
-        profile = conn.execute("SELECT * FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
+        profile = _resolve_profile_row(conn, auth_token)
         pid = profile["id"]
 
         prof_in = payload.get("profile") or {}
@@ -1233,7 +1475,7 @@ def update_profile_bundle(payload: Dict[str, Any]) -> Dict[str, Any]:
         conn.commit()
     finally:
         conn.close()
-    return get_profile_bundle()
+    return get_profile_bundle(auth_token=auth_token)
 
 
 def resolve_location(
@@ -3642,11 +3884,11 @@ def _fetch_brief_aqi(lat: float, lon: float, standard: str = "NAQI") -> Tuple[Op
         return None, None
 
 
-def get_air_twin_data(include_live: bool = True) -> Dict[str, Any]:
+def get_air_twin_data(include_live: bool = True, auth_token: Optional[str] = None) -> Dict[str, Any]:
     init_db()
     conn = get_db_connection()
     try:
-        profile = conn.execute("SELECT * FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
+        profile = _resolve_profile_row(conn, auth_token)
         pref_row = conn.execute("SELECT aqi_standard FROM user_preferences WHERE profile_id = ? LIMIT 1", (profile["id"],)).fetchone()
         std = str((pref_row["aqi_standard"] if pref_row else "NAQI") or "NAQI").upper()
         pid = profile["id"]
@@ -3878,7 +4120,7 @@ def get_air_twin_data(include_live: bool = True) -> Dict[str, Any]:
     }
 
 
-def add_personal_location(label: str, city: str, hours_per_day: float = 8.0) -> Dict[str, Any]:
+def add_personal_location(label: str, city: str, hours_per_day: float = 8.0, auth_token: Optional[str] = None) -> Dict[str, Any]:
     label = (label or "").strip()
     city = (city or "").strip()
     hrs = max(0.5, min(24.0, float(hours_per_day or 8.0)))
@@ -3891,7 +4133,7 @@ def add_personal_location(label: str, city: str, hours_per_day: float = 8.0) -> 
     conn = get_db_connection()
     now = utc_now_iso()
     try:
-        profile = conn.execute("SELECT id FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
+        profile = _resolve_profile_row(conn, auth_token)
         cur = conn.execute(
             """
             INSERT INTO personal_locations (profile_id, label, city, latitude, longitude, hours_per_day, created_at)
@@ -3930,6 +4172,7 @@ def add_personal_activity(
     hours_per_day: float,
     intensity: str = "Moderate",
     is_outdoor: bool = True,
+    auth_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     activity_type = (activity_type or "").strip()
     if activity_type not in ACTIVITY_TYPES:
@@ -3944,7 +4187,7 @@ def add_personal_activity(
     conn = get_db_connection()
     now = utc_now_iso()
     try:
-        profile = conn.execute("SELECT id, preferred_city FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
+        profile = _resolve_profile_row(conn, auth_token)
         loc_label = profile["preferred_city"]
         if location_id is not None:
             lrow = conn.execute("SELECT label, city FROM personal_locations WHERE id = ?", (location_id,)).fetchone()
@@ -3978,8 +4221,8 @@ def delete_personal_activity(act_id: int) -> None:
         conn.close()
 
 
-def add_exposure_diary_entry(notes: str = "", entry_date: Optional[str] = None) -> Dict[str, Any]:
-    twin = get_air_twin_data(include_live=True)
+def add_exposure_diary_entry(notes: str = "", entry_date: Optional[str] = None, auth_token: Optional[str] = None) -> Dict[str, Any]:
+    twin = get_air_twin_data(include_live=True, auth_token=auth_token)
     summary = twin["daily_summary"]
     est_aqi = summary.get("weighted_exposure_aqi")
     if est_aqi is None:
@@ -3996,7 +4239,7 @@ def add_exposure_diary_entry(notes: str = "", entry_date: Optional[str] = None) 
     conn = get_db_connection()
     now = utc_now_iso()
     try:
-        profile = conn.execute("SELECT id FROM user_profiles ORDER BY id ASC LIMIT 1").fetchone()
+        profile = _resolve_profile_row(conn, auth_token)
         cur = conn.execute(
             """
             INSERT INTO exposure_diary (

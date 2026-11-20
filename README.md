@@ -1,21 +1,20 @@
 # VayuMitra
 
-VayuMitra is a multi-page air-quality monitoring website built with HTML, CSS,
-JavaScript, Python (Flask) and SQLite.
+VayuMitra is an air-quality monitoring website made with HTML, CSS, JavaScript,
+Python and SQLite.
 
-## Project structure
+## Project folders
 
-- `frontend/` — HTML pages, CSS, JavaScript and required images
-- `backend/` — Python server, configuration and API/data services
-- `backend/requirements.txt` — Python dependencies
-- `database/` — created automatically when the server starts
+- `frontend/` - website pages, styles, scripts and images
+- `backend/` - Python application, configuration and data services
+- `database/` - the database is created automatically when the server starts
 
-## Run on Windows (VS Code)
+## Run the project in VS Code (Windows)
 
-1. Extract `VayuMitra_Cleaned.zip`.
-2. Open the extracted **VayuMitra** folder in VS Code.
-3. Open Terminal → New Terminal.
-4. Check Python is installed:
+1. Extract `VayuMitra_Cleaned_v2.zip`.
+2. Open the extracted `VayuMitra` folder in VS Code.
+3. Open **Terminal > New Terminal**.
+4. Check Python:
 
    ```powershell
    python --version
@@ -33,31 +32,32 @@ JavaScript, Python (Flask) and SQLite.
    .\venv\Scripts\Activate.ps1
    ```
 
-   If PowerShell blocks activation, use Command Prompt terminal and run:
+   If PowerShell blocks activation, choose **Command Prompt** as the VS Code
+   terminal and run:
 
    ```cmd
    venv\Scripts\activate.bat
    ```
 
-7. Install the required packages:
+7. Install the packages:
 
    ```powershell
    pip install -r backend\requirements.txt
    ```
 
-8. Start the website:
+8. Start VayuMitra:
 
    ```powershell
    python backend\app.py
    ```
 
-9. Open this address in your browser:
+9. Open this address in Chrome:
 
    `http://127.0.0.1:5000`
 
-## If Flask installation is unavailable
+## If Flask is not installed
 
-The project also contains a built-in Python server mode:
+The project includes a built-in Python server. Run:
 
 ```powershell
 python backend\app.py --stdlib
@@ -65,9 +65,9 @@ python backend\app.py --stdlib
 
 Then open `http://127.0.0.1:5000`.
 
-## Important
+## Notes
 
-- Do not open the HTML files directly; run the Python server so the `/api/` features work.
-- The database and upload folders are created automatically.
-- Live air-quality, weather, geocoding and route information needs an internet connection.
-- Optional API keys can be added as environment variables; the core Open-Meteo/OSRM services do not require keys.
+- Run the Python server; do not open `frontend/index.html` directly.
+- The SQLite database and upload folder are created automatically.
+- Live air-quality, weather and map/routing data need an internet connection.
+- The default Open-Meteo and OSRM services do not need API keys.

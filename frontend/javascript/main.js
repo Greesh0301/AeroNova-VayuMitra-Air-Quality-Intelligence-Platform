@@ -4,6 +4,35 @@
 
   const STORAGE_CITY_KEY = "vayumitra_selected_city";
   const STORAGE_COORDS_KEY = "vayumitra_selected_coords";
+  const AUTH_TOKEN_KEY = "vayumitra_auth_token";
+  const AUTH_USER_KEY = "vayumitra_auth_user";
+
+  function getAuthToken() {
+    return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+  }
+
+  function getAuthUser() {
+    try {
+      const raw = localStorage.getItem(AUTH_USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function setAuthSession(token, user) {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+    }
+    if (user) {
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    }
+  }
+
+  function clearAuthSession() {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+  }
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -142,6 +171,43 @@
         });
       });
     }
+
+    const navbar = document.querySelector(".vm-navbar");
+    if (navbar && !document.getElementById("vmNavAuthBtn")) {
+      const token = getAuthToken();
+      const user = getAuthUser();
+      const authLink = document.createElement("a");
+      authLink.id = "vmNavAuthBtn";
+      if (token && user) {
+        const initial = String(user.name || "V").trim().charAt(0).toUpperCase() || "V";
+        authLink.href = "profile.html";
+        authLink.className = "vm-nav-auth-chip is-signed-in";
+        authLink.title = `Signed in as ${user.name || "Citizen"} (${user.email || ""})`;
+        authLink.innerHTML = `<span class="vm-nav-auth-avatar">${escapeHtml(initial)}</span><span class="vm-nav-auth-label">Account</span>`;
+      } else {
+        authLink.href = "login.html";
+        authLink.className = "vm-nav-auth-chip";
+        authLink.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg><span>Login</span>`;
+      }
+      if (toggleBtn && toggleBtn.parentNode === navbar) {
+        navbar.insertBefore(authLink, toggleBtn);
+      } else {
+        navbar.appendChild(authLink);
+      }
+
+      if (mobileMenu && !mobileMenu.querySelector(".vm-mobile-auth-link")) {
+        const mobAuth = document.createElement("a");
+        mobAuth.className = "vm-nav-link vm-mobile-auth-link";
+        if (token && user) {
+          mobAuth.href = "logout.html";
+          mobAuth.textContent = `Logout (${user.name || "Account"})`;
+        } else {
+          mobAuth.href = "login.html";
+          mobAuth.textContent = "Login / Sign Up";
+        }
+        mobileMenu.appendChild(mobAuth);
+      }
+    }
   }
 
   function getTimeGreeting() {
@@ -213,6 +279,7 @@
       "twinLocCity",
       "vmRouteOrigin",
       "vmRouteDest",
+      "regPreferredCity",
     ];
     const inputs = inputIds.map((id) => document.getElementById(id)).filter(Boolean);
     if (!inputs.length) return;
@@ -283,5 +350,9 @@
     requestBrowserLocation,
     updateHeaderWeather,
     showBanner,
+    getAuthToken,
+    getAuthUser,
+    setAuthSession,
+    clearAuthSession,
   };
 })(window, document);

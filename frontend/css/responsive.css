@@ -164,4 +164,20 @@
   .vm-windows-grid {
     grid-template-columns: 1fr;
   }
+  .vm-nav-search-box input {
+    width: 108px;
+  }
+  .vm-nav-auth-label {
+    display: none;
+  }
+  .vm-nav-auth-chip {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+  }
+  .vm-nav-auth-chip.is-signed-in {
+    padding: 4px;
+  }
+  .vm-auth-card {
+    padding: 22px 18px;
+  }
 }

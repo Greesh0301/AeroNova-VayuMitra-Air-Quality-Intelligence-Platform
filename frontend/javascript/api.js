@@ -15,7 +15,16 @@
   }
 
   async function requestJson(url, options) {
-    const resp = await fetch(url, options);
+    const opts = Object.assign({}, options || {});
+    const token = window.localStorage.getItem("vayumitra_auth_token");
+    if (token) {
+      const hdrs = new Headers(opts.headers || {});
+      if (!hdrs.has("Authorization")) {
+        hdrs.set("Authorization", `Bearer ${token}`);
+      }
+      opts.headers = hdrs;
+    }
+    const resp = await fetch(url, opts);
     const text = await resp.text();
     let data = {};
     try {
@@ -30,6 +39,28 @@
   }
 
   window.VayuApi = {
+    login(payload) {
+      return requestJson("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    },
+    register(payload) {
+      return requestJson("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    },
+    logout() {
+      return requestJson("/api/auth/logout", {
+        method: "POST",
+      });
+    },
+    getAuthMe() {
+      return requestJson("/api/auth/me");
+    },
     getDashboard(params) {
       return requestJson(`/api/dashboard${buildQuery(params)}`);
     },

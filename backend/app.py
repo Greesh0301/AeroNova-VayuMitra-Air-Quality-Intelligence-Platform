@@ -24,6 +24,7 @@ from services import (
     get_air_quality_data,
     get_air_twin_data,
     get_alerts_data,
+    get_auth_session,
     get_clean_routes,
     get_community_contribution_summary,
     get_dashboard_data,
@@ -35,6 +36,9 @@ from services import (
     get_time_machine_data,
     init_db,
     list_community_reports,
+    login_user,
+    logout_user,
+    register_user,
     simulate_what_if,
     update_community_report_status,
     update_profile_bundle,
@@ -65,6 +69,16 @@ def _parse_bool(val):
     if val is None:
         return False
     return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _extract_auth_token_from_headers(headers) -> str:
+    auth_hdr = headers.get("Authorization") or ""
+    if auth_hdr.lower().startswith("bearer "):
+        return auth_hdr[7:].strip()
+    x_tok = headers.get("X-Auth-Token") or ""
+    if x_tok:
+        return x_tok.strip()
+    return ""
 
 
 def create_flask_app():
@@ -321,13 +335,51 @@ def create_flask_app():
         except LookupError as exc:
             return jsonify({"error": str(exc)}), 404
 
-    @app.route("/api/profile", methods=["GET", "PUT"])
-    def api_profile():
-        if request.method == "GET":
-            return jsonify(get_profile_bundle())
+    @app.route("/api/auth/login", methods=["POST"])
+    def api_auth_login():
         try:
             data = request.get_json(silent=True) or {}
-            updated = update_profile_bundle(data)
+            res = login_user(data.get("email", ""), data.get("password", ""))
+            return jsonify(res)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 401
+        except Exception as exc:
+            return jsonify({"error": f"Login failed: {exc}"}), 500
+
+    @app.route("/api/auth/register", methods=["POST"])
+    def api_auth_register():
+        try:
+            data = request.get_json(silent=True) or {}
+            res = register_user(
+                data.get("name", ""),
+                data.get("email", ""),
+                data.get("password", ""),
+                data.get("preferred_city", "Mumbai"),
+            )
+            return jsonify(res), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Registration failed: {exc}"}), 500
+
+    @app.route("/api/auth/logout", methods=["POST"])
+    def api_auth_logout():
+        token = _extract_auth_token_from_headers(request.headers)
+        return jsonify(logout_user(token))
+
+    @app.route("/api/auth/me", methods=["GET"])
+    def api_auth_me():
+        token = _extract_auth_token_from_headers(request.headers)
+        return jsonify(get_auth_session(token))
+
+    @app.route("/api/profile", methods=["GET", "PUT"])
+    def api_profile():
+        token = _extract_auth_token_from_headers(request.headers)
+        if request.method == "GET":
+            return jsonify(get_profile_bundle(auth_token=token))
+        try:
+            data = request.get_json(silent=True) or {}
+            updated = update_profile_bundle(data, auth_token=token)
             return jsonify({"message": "Settings saved successfully.", **updated})
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -337,18 +389,21 @@ def create_flask_app():
     @app.route("/api/air-twin", methods=["GET"])
     def api_air_twin():
         try:
-            return jsonify(get_air_twin_data(include_live=True))
+            token = _extract_auth_token_from_headers(request.headers)
+            return jsonify(get_air_twin_data(include_live=True, auth_token=token))
         except Exception as exc:
             return jsonify({"error": f"Air Twin service error: {exc}"}), 502
 
     @app.route("/api/air-twin/locations", methods=["POST"])
     def api_air_twin_add_location():
         try:
+            token = _extract_auth_token_from_headers(request.headers)
             data = request.get_json(silent=True) or {}
             created = add_personal_location(
                 data.get("label", ""),
                 data.get("city", ""),
                 hours_per_day=float(data.get("hours_per_day", 8.0) or 8.0),
+                auth_token=token,
             )
             return jsonify({"message": "Frequent location added.", "location": created}), 201
         except ValueError as exc:
@@ -367,6 +422,7 @@ def create_flask_app():
     @app.route("/api/air-twin/activities", methods=["POST"])
     def api_air_twin_add_activity():
         try:
+            token = _extract_auth_token_from_headers(request.headers)
             data = request.get_json(silent=True) or {}
             created = add_personal_activity(
                 activity_type=data.get("activity_type", ""),
@@ -374,6 +430,7 @@ def create_flask_app():
                 hours_per_day=float(data.get("hours_per_day", 1)),
                 intensity=data.get("intensity", "Moderate"),
                 is_outdoor=bool(data.get("is_outdoor", True)),
+                auth_token=token,
             )
             return jsonify({"message": "Daily activity logged.", "activity": created}), 201
         except ValueError as exc:
@@ -390,8 +447,9 @@ def create_flask_app():
     @app.route("/api/air-twin/diary", methods=["POST"])
     def api_air_twin_add_diary():
         try:
+            token = _extract_auth_token_from_headers(request.headers)
             data = request.get_json(silent=True) or {}
-            entry = add_exposure_diary_entry(notes=data.get("notes", ""), entry_date=data.get("entry_date"))
+            entry = add_exposure_diary_entry(notes=data.get("notes", ""), entry_date=data.get("entry_date"), auth_token=token)
             return jsonify({"message": "Exposure diary snapshot logged.", "entry": entry}), 201
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
@@ -563,10 +621,15 @@ def run_stdlib_server(host: str, port: int):
                             "reports": list_community_reports(q("status"), q("category"), q("search")),
                         },
                     )
+                if path == "/api/auth/me":
+                    tok = _extract_auth_token_from_headers(self.headers)
+                    return self._send_json(200, get_auth_session(tok))
                 if path == "/api/profile":
-                    return self._send_json(200, get_profile_bundle())
+                    tok = _extract_auth_token_from_headers(self.headers)
+                    return self._send_json(200, get_profile_bundle(auth_token=tok))
                 if path == "/api/air-twin":
-                    return self._send_json(200, get_air_twin_data(include_live=True))
+                    tok = _extract_auth_token_from_headers(self.headers)
+                    return self._send_json(200, get_air_twin_data(include_live=True, auth_token=tok))
                 if path == "/api/air-twin/export":
                     fname, csv_text = export_air_twin_csv()
                     return self._send_bytes(
@@ -616,16 +679,42 @@ def run_stdlib_server(host: str, port: int):
                     )
                     return self._send_json(200, res)
 
+                if path == "/api/auth/login":
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                    try:
+                        return self._send_json(200, login_user(data.get("email", ""), data.get("password", "")))
+                    except ValueError as exc:
+                        return self._send_json(401, {"error": str(exc)})
+
+                if path == "/api/auth/register":
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                    return self._send_json(
+                        201,
+                        register_user(
+                            data.get("name", ""),
+                            data.get("email", ""),
+                            data.get("password", ""),
+                            data.get("preferred_city", "Mumbai"),
+                        ),
+                    )
+
+                if path == "/api/auth/logout":
+                    tok = _extract_auth_token_from_headers(self.headers)
+                    return self._send_json(200, logout_user(tok))
+
                 if path == "/api/air-twin/locations":
+                    tok = _extract_auth_token_from_headers(self.headers)
                     data = json.loads(self._read_body().decode("utf-8") or "{}")
                     created = add_personal_location(
                         data.get("label", ""),
                         data.get("city", ""),
                         hours_per_day=float(data.get("hours_per_day", 8.0) or 8.0),
+                        auth_token=tok,
                     )
                     return self._send_json(201, {"message": "Frequent location added.", "location": created})
 
                 if path == "/api/air-twin/activities":
+                    tok = _extract_auth_token_from_headers(self.headers)
                     data = json.loads(self._read_body().decode("utf-8") or "{}")
                     created = add_personal_activity(
                         activity_type=data.get("activity_type", ""),
@@ -633,12 +722,14 @@ def run_stdlib_server(host: str, port: int):
                         hours_per_day=float(data.get("hours_per_day", 1)),
                         intensity=data.get("intensity", "Moderate"),
                         is_outdoor=bool(data.get("is_outdoor", True)),
+                        auth_token=tok,
                     )
                     return self._send_json(201, {"message": "Daily activity logged.", "activity": created})
 
                 if path == "/api/air-twin/diary":
+                    tok = _extract_auth_token_from_headers(self.headers)
                     data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    entry = add_exposure_diary_entry(notes=data.get("notes", ""), entry_date=data.get("entry_date"))
+                    entry = add_exposure_diary_entry(notes=data.get("notes", ""), entry_date=data.get("entry_date"), auth_token=tok)
                     return self._send_json(201, {"message": "Exposure diary snapshot logged.", "entry": entry})
 
                 if path == "/api/community/report":
@@ -715,7 +806,8 @@ def run_stdlib_server(host: str, port: int):
             try:
                 data = json.loads(self._read_body().decode("utf-8") or "{}")
                 if path == "/api/profile":
-                    return self._send_json(200, {"message": "Settings saved successfully.", **update_profile_bundle(data)})
+                    tok = _extract_auth_token_from_headers(self.headers)
+                    return self._send_json(200, {"message": "Settings saved successfully.", **update_profile_bundle(data, auth_token=tok)})
                 if path.startswith("/api/community/reports/") and path.endswith("/status"):
                     parts = path.strip("/").split("/")
                     rid = int(parts[3])

@@ -205,6 +205,28 @@
         </div>
       </form>
     </section>
+
+    <!-- Scrollable Section 4: Account Session & Logout -->
+    <section class="vm-section" style="padding-top:4px;">
+      <article class="vm-card vm-session-card">
+        <div>
+          <h2 class="vm-section-title vm-title-with-ico" style="font-size:1.15rem;">
+            <span class="vm-head-ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            </span>
+            <span>Account Session</span>
+          </h2>
+          <p id="profSessionStatus" class="vm-section-subtitle" style="margin-top:4px;">Checking active login session...</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <a href="login.html" id="vmSettingsSwitchAccountBtn" class="vm-btn vm-btn-glass vm-btn-sm" style="border-color:var(--vm-border-hairline);">Sign In / Switch Account</a>
+          <a href="logout.html" id="vmSettingsLogoutLink" class="vm-btn vm-btn-logout vm-btn-sm">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            <span>Logout</span>
+          </a>
+        </div>
+      </article>
+    </section>
   </main>
 
   <footer class="vm-footer">

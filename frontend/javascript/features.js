@@ -2154,9 +2154,14 @@
 
   async function initProfilePage() {
     try {
-      const [bundle, twin] = await Promise.all([window.VayuApi.getProfile(), window.VayuApi.getAirTwin()]);
+      const [bundle, twin, authState] = await Promise.all([
+        window.VayuApi.getProfile(),
+        window.VayuApi.getAirTwin(),
+        window.VayuApi.getAuthMe().catch(() => ({ authenticated: false, user: null })),
+      ]);
       populateProfileForm(bundle);
       renderAirTwin(twin);
+      updateProfileSessionUI(authState, bundle);
     } catch (err) {
       window.VayuMain.showBanner("vmProfileBanner", err.message, "error");
     }
@@ -2472,6 +2477,169 @@
     setText("profSecurityStatus", p.has_password ? "Password protection is active." : "No password set.");
   }
 
+  function updateProfileSessionUI(authState, bundle) {
+    const statusEl = document.getElementById("profSessionStatus");
+    const switchBtn = document.getElementById("vmSettingsSwitchAccountBtn");
+    const logoutBtn = document.getElementById("vmSettingsLogoutLink");
+    const isAuth = Boolean(authState && authState.authenticated && authState.user);
+    if (isAuth) {
+      const u = authState.user;
+      window.VayuMain.setAuthSession(window.VayuMain.getAuthToken(), u);
+      if (statusEl) {
+        statusEl.textContent = `Signed in as ${u.name || "Citizen"} (${u.email || ""})`;
+      }
+      if (switchBtn) switchBtn.textContent = "Switch Account";
+      if (logoutBtn) logoutBtn.classList.remove("vm-hidden");
+    } else {
+      window.VayuMain.clearAuthSession();
+      const profName = (bundle && bundle.profile && bundle.profile.name) || "Guest";
+      if (statusEl) {
+        statusEl.textContent = `Signed out (viewing ${profName} defaults). Sign in to sync your personal account or visit the Logout page.`;
+      }
+      if (switchBtn) switchBtn.textContent = "Sign In";
+    }
+  }
+
+  /* =========================================================
+     8. LOGIN & LOGOUT PAGES (login.html & logout.html)
+     ========================================================= */
+  function initLoginPage() {
+    const tabLogin = document.getElementById("vmTabLoginBtn");
+    const tabReg = document.getElementById("vmTabRegisterBtn");
+    const loginForm = document.getElementById("vmLoginForm");
+    const regForm = document.getElementById("vmRegisterForm");
+    const fillDemoBtn = document.getElementById("vmFillDemoBtn");
+    const nextUrl = new URLSearchParams(window.location.search).get("next") || "index.html";
+
+    function switchTab(mode) {
+      const isLogin = mode === "login";
+      if (tabLogin) {
+        tabLogin.classList.toggle("active", isLogin);
+        tabLogin.setAttribute("aria-selected", String(isLogin));
+      }
+      if (tabReg) {
+        tabReg.classList.toggle("active", !isLogin);
+        tabReg.setAttribute("aria-selected", String(!isLogin));
+      }
+      if (loginForm) loginForm.classList.toggle("vm-hidden", !isLogin);
+      if (regForm) regForm.classList.toggle("vm-hidden", isLogin);
+      window.VayuMain.showBanner("vmLoginBanner", "", "info");
+    }
+
+    if (tabLogin) tabLogin.addEventListener("click", () => switchTab("login"));
+    if (tabReg) tabReg.addEventListener("click", () => switchTab("register"));
+
+    [
+      ["loginTogglePw", "loginPassword"],
+      ["regTogglePw", "regPassword"],
+    ].forEach(([btnId, inputId]) => {
+      const btn = document.getElementById(btnId);
+      const inp = document.getElementById(inputId);
+      if (btn && inp) {
+        btn.addEventListener("click", () => {
+          const isPw = inp.getAttribute("type") === "password";
+          inp.setAttribute("type", isPw ? "text" : "password");
+          btn.setAttribute("aria-label", isPw ? "Hide password" : "Show password");
+        });
+      }
+    });
+
+    if (fillDemoBtn) {
+      fillDemoBtn.addEventListener("click", () => {
+        setInputVal("loginEmail", "aarav@vayumitra.in");
+        setInputVal("loginPassword", "vayumitra123");
+      });
+    }
+
+    if (loginForm) {
+      loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById("vmLoginSubmitBtn");
+        if (btn) btn.disabled = true;
+        window.VayuMain.showBanner("vmLoginBanner", "", "info");
+        try {
+          const res = await window.VayuApi.login({
+            email: (document.getElementById("loginEmail") || {}).value || "",
+            password: (document.getElementById("loginPassword") || {}).value || "",
+          });
+          window.VayuMain.setAuthSession(res.token, res.user);
+          if (res.user && res.user.preferred_city) {
+            window.VayuMain.setStoredCity(res.user.preferred_city);
+          }
+          window.VayuMain.showBanner("vmLoginBanner", res.message || "Signed in! Redirecting...", "success");
+          setTimeout(() => {
+            window.location.href = nextUrl;
+          }, 550);
+        } catch (err) {
+          window.VayuMain.showBanner("vmLoginBanner", err.message || "Login failed.", "error");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      });
+    }
+
+    if (regForm) {
+      regForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById("vmRegisterSubmitBtn");
+        if (btn) btn.disabled = true;
+        window.VayuMain.showBanner("vmLoginBanner", "", "info");
+        try {
+          const res = await window.VayuApi.register({
+            name: (document.getElementById("regName") || {}).value || "",
+            email: (document.getElementById("regEmail") || {}).value || "",
+            preferred_city: (document.getElementById("regPreferredCity") || {}).value || "Mumbai",
+            password: (document.getElementById("regPassword") || {}).value || "",
+          });
+          window.VayuMain.setAuthSession(res.token, res.user);
+          if (res.user && res.user.preferred_city) {
+            window.VayuMain.setStoredCity(res.user.preferred_city);
+          }
+          window.VayuMain.showBanner("vmLoginBanner", res.message || "Account created! Redirecting...", "success");
+          setTimeout(() => {
+            window.location.href = nextUrl;
+          }, 550);
+        } catch (err) {
+          window.VayuMain.showBanner("vmLoginBanner", err.message || "Registration failed.", "error");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      });
+    }
+  }
+
+  async function initLogoutPage() {
+    const prevUser = window.VayuMain.getAuthUser();
+    const hadToken = Boolean(window.VayuMain.getAuthToken());
+    try {
+      await window.VayuApi.logout();
+    } catch (_e) {}
+    window.VayuMain.clearAuthSession();
+
+    const navAuthBtn = document.getElementById("vmNavAuthBtn");
+    if (navAuthBtn) {
+      navAuthBtn.href = "login.html";
+      navAuthBtn.className = "vm-nav-auth-chip";
+      navAuthBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg><span>Login</span>`;
+    }
+
+    setText("vmLogoutTitle", hadToken ? "You have been logged out" : "Logged out cleanly");
+    setText(
+      "vmLogoutDesc",
+      hadToken
+        ? "Your VayuMitra session has been ended safely on this device."
+        : "No active session remains on this device. You can sign in below anytime."
+    );
+
+    const infoBox = document.getElementById("vmLogoutAccountInfo");
+    if (infoBox && prevUser && prevUser.name) {
+      infoBox.classList.remove("vm-hidden");
+      infoBox.innerHTML = `<strong>Signed out from:</strong> ${window.VayuMain.escapeHtml(prevUser.name)}${
+        prevUser.email ? ` (${window.VayuMain.escapeHtml(prevUser.email)})` : ""
+      }`;
+    }
+  }
+
   function setText(id, text) {
     const el = document.getElementById(id);
     if (el) el.textContent = text == null ? "" : String(text);
@@ -2494,5 +2662,7 @@
     else if (page === "alerts") initAlertsPage();
     else if (page === "reports") initReportsPage();
     else if (page === "profile") initProfilePage();
+    else if (page === "login") initLoginPage();
+    else if (page === "logout") initLogoutPage();
   });
 })(window, document);
