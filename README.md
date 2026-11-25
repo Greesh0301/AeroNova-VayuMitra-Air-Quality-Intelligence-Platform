@@ -1,6 +1,6 @@
 # VayuMitra – Intelligent Air Quality Monitoring & Investigation Platform
 
-**VayuMitra – Beyond Air Quality Monitoring** is a multi-page environmental monitoring, pollution investigation, predictive analytics, clean-air routing, and community reporting platform built strictly with **HTML5, CSS3, Vanilla JavaScript, Chart.js, Leaflet.js, Python (Flask), and SQLite3**.
+**VayuMitra – Beyond Air Quality Monitoring** is a multi-page environmental monitoring, pollution investigation, predictive analytics, clean-air routing, and community reporting platform built with **HTML5, CSS3, Vanilla JavaScript, Chart.js, Leaflet.js, TypeScript, Node.js, Express, and an in-memory data store**.
 
 ---
 
@@ -36,50 +36,38 @@ Every page shares a responsive 7-section navigation system (**Home**, **Insights
 
 ---
 
-## External APIs & Environment Configuration
+## Backend & Environment Configuration
 
-- **Zero-Key Default APIs**: Open-Meteo Air Quality, Open-Meteo Weather & Forecast, Open-Meteo Geocoding, OpenStreetMap Nominatim, and OSRM routing work out of the box with **no API key required**.
-- **Optional Environment Variables (`VayuMitra/.env`)**: Never commit secrets to Git (`.env` is gitignored). Supported variables in `backend/config.py`:
-  - `VAYUMITRA_DEFAULT_CITY` – Startup city (defaults to `Mumbai`)
-  - `PORT` / `FLASK_HOST` / `FLASK_DEBUG` – Server bind settings
-  - `SECRET_KEY` – Flask session secret for production deployments
-  - `OPENWEATHER_API_KEY` – Optional secondary weather/air enrichment key
-  - `AQICN_API_TOKEN` – Optional secondary station feed token
-
----
+- The current backend is implemented in **TypeScript** and runs on **Node.js + Express**. Its API routes are defined in `server.ts`; supporting services and the in-memory data store are in `src/`.
+- The frontend calls the backend through `frontend/javascript/api.js` using `/api/...` endpoints.
+- The default data store is in-memory. Data stored there may reset when the server restarts.
+- Zero-key external services include Open-Meteo Air Quality, Open-Meteo Weather & Forecast, Open-Meteo Geocoding, OpenStreetMap Nominatim, and OSRM routing.
+- Optional environment variables are listed in `.env.example`. Copy it to `.env` only if you need to configure optional API credentials or a default city. Never commit `.env`.
 
 ## Running Locally in VS Code (Windows / macOS / Linux)
 
-1. Open the **`VayuMitra`** folder in **VS Code**.
-2. Open the VS Code integrated terminal (`Ctrl + \``).
-3. Create a virtual environment, install dependencies, and start Flask:
+1. Install **Node.js 20 or later**.
+2. Open the `VayuMitra` folder in VS Code.
+3. Open the integrated terminal (`Ctrl + \``).
+4. Install the backend dependencies:
 
-   **Windows (PowerShell):**
-   ```powershell
-   python -m venv venv
-   .\venv\Scripts\Activate.ps1
-   pip install -r backend\requirements.txt
-   python backend\app.py
-   ```
-
-   **Windows (Command Prompt):**
-   ```cmd
-   python -m venv venv
-   venv\Scripts\activate.bat
-   pip install -r backend\requirements.txt
-   python backend\app.py
-   ```
-
-   **macOS / Linux:**
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r backend/requirements.txt
-   python backend/app.py
+   npm install
    ```
 
-4. Open **`http://localhost:5000`** in your browser.
-5. *(Zero-dependency fallback if Flask is not installed)*:
+5. Start the development server:
+
    ```bash
-   python backend/app.py --stdlib --host 127.0.0.1 --port 5000
+   npm run dev
    ```
+
+6. Open **http://localhost:3000** in your browser.
+
+For a production build, run:
+
+```bash
+npm run build
+npm start
+```
+
+The project currently contains a TypeScript/Express backend. Removing TypeScript and Node.js without first porting the backend would break the existing API-driven features, so these required backend files and dependencies are retained to preserve functionality. No Python/Flask backend was present in the supplied archive.

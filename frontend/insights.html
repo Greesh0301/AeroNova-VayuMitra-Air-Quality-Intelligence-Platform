@@ -4,12 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Insights &ndash; Pollution Intelligence Centre &ndash; VayuMitra</title>
-  <meta name="description" content="Pollution source fingerprinting, 24-hour AQI prediction, pollution time machine, and What-If simulator." />
+  <meta name="description" content="24-hour AQI prediction, pollution history, What-If simulator, and pollution event replay." />
   <link rel="icon" type="image/svg+xml" href="assets/icons/logo-leaf.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/pages.css" />
   <link rel="stylesheet" href="css/responsive.css" />
@@ -41,7 +40,7 @@
         <a href="alerts.html" class="vm-nav-link">Alerts</a>
         <a href="reports.html" class="vm-nav-link">Reports</a>
         <a href="community.html" class="vm-nav-link">Community</a>
-        <a href="profile.html" class="vm-nav-link">Profile</a>
+        <a href="profile.html" class="vm-nav-link">Settings</a>
       </div>
       <form id="vmNavSearchForm" class="vm-nav-search" role="search" aria-label="Search city air quality">
         <div class="vm-nav-search-box">
@@ -67,7 +66,7 @@
       <a href="alerts.html" class="vm-nav-link">Alerts</a>
       <a href="reports.html" class="vm-nav-link">Reports</a>
       <a href="community.html" class="vm-nav-link">Community</a>
-      <a href="profile.html" class="vm-nav-link">Profile</a>
+      <a href="profile.html" class="vm-nav-link">Settings</a>
     </div>
   </header>
 
@@ -81,67 +80,23 @@
             </span>
             <span>Insights</span>
           </h1>
-          <p class="vm-section-subtitle">Pollution Intelligence Centre &middot; <strong id="insLocationName">--</strong></p>
+          <p class="vm-section-subtitle">Forecast, past trends, what-if tools &amp; spike replay &middot; <strong id="insLocationName">--</strong></p>
         </div>
         <span class="vm-badge-data vm-badge-verified" id="insForecastQuality">Live Data</span>
       </div>
     </section>
 
-    <div class="vm-jump-tabs">
-      <a href="#ins-sources" class="vm-jump-pill active vm-title-with-ico" style="gap:7px;">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <span>Source Detection</span>
-      </a>
-      <a href="#ins-prediction" class="vm-jump-pill vm-title-with-ico" style="gap:7px;">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
-        <span>AQI Prediction</span>
-      </a>
-      <a href="#ins-history" class="vm-jump-pill vm-title-with-ico" style="gap:7px;">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-        <span>Pollution History</span>
-      </a>
-      <a href="#ins-simulator" class="vm-jump-pill vm-title-with-ico" style="gap:7px;">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"></path><path d="M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"></path></svg>
-        <span>What-If Simulator</span>
-      </a>
-      <a href="#ins-event-replay" class="vm-jump-pill vm-title-with-ico" style="gap:7px;">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-        <span>Pollution Event Replay</span>
-      </a>
-    </div>
+    <nav class="vm-jump-tabs" aria-label="Jump to section">
+      <a href="#ins-prediction" class="vm-jump-pill active">AQI Prediction</a>
+      <a href="#ins-history" class="vm-jump-pill">Pollution History</a>
+      <a href="#ins-simulator" class="vm-jump-pill">What-If Simulator</a>
+      <a href="#ins-event-replay" class="vm-jump-pill">Event Replay</a>
+    </nav>
 
     <div id="vmInsightsBanner" class="vm-banner vm-hidden"></div>
 
-    <!-- Scrollable Section 1: Pollution Source Fingerprinting (Exact image layout) -->
-    <section id="ins-sources" class="vm-section">
-      <article class="vm-card">
-        <div class="vm-section-head" style="margin-bottom:6px;">
-          <div>
-            <h2 class="vm-section-title vm-title-with-ico">
-              <span class="vm-head-ico" aria-hidden="true">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4"></path><path d="M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2"></path><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"></path><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"></path><path d="M8.65 22c.21-.66.45-1.32.57-2"></path><path d="M14 13.12c0 2.38 0 6.38-1 8.88"></path><path d="M2 16h.01"></path><path d="M21.8 16c.2-2 .131-5.354 0-6"></path><path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2"></path></svg>
-              </span>
-              <span>Pollution Source Fingerprinting</span>
-            </h2>
-            <p class="vm-section-subtitle" style="margin-top:3px;">Possible sources of current pollution:</p>
-          </div>
-        </div>
 
-        <div id="insFingerprintGrid" class="vm-fp-list">
-          <span class="vm-meta-line">Loading source signals...</span>
-        </div>
-
-        <div class="vm-fp-conf-bar" id="insFingerprintConfBar">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="#16a34a" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="8.5 12.5 11 15 15.5 9.5" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-          </svg>
-          <span id="insFingerprintConfBadge">Confidence Level: --</span>
-        </div>
-      </article>
-    </section>
-
-    <!-- Scrollable Section 2: AQI Prediction & Expected AQI Card -->
+    <!-- 2. AQI Prediction (Stacked Card 2) -->
     <section id="ins-prediction" class="vm-section">
       <article class="vm-card">
         <div class="vm-section-head">
@@ -152,26 +107,27 @@
               </span>
               <span>AQI Prediction</span>
             </h2>
-            <p class="vm-section-subtitle">Next 24 Hours Forecast</p>
+            <p id="insForecastPeriod" class="vm-section-subtitle">Next 24 Hours Forecast &amp; 3-Day Outlook</p>
           </div>
           <span class="vm-status-tag vm-status-good">Predicted AQI &amp; Range</span>
         </div>
 
         <div class="vm-forecast-split">
-          <div class="vm-chart-box-lg">
+          <div class="vm-chart-box-lg" style="height:290px;">
             <canvas id="vmInsightsForecastChart"></canvas>
           </div>
           <div class="vm-expected-aqi-box">
-            <span class="vm-stat-label">Expected AQI</span>
+            <span class="vm-stat-label">Expected Peak AQI</span>
             <div id="insExpectedAqiVal" class="vm-gauge-num">--</div>
             <span id="insExpectedAqiBadge" class="vm-status-tag vm-status-moderate">--</span>
-            <p id="insRateSummary" class="vm-meta-line" style="justify-content:center; margin-top:4px; text-align:center;">--</p>
+            <p id="insRateStatus" class="vm-meta-line" style="font-weight:700; color:var(--vm-teal-deep); margin-top:4px;">--</p>
+            <p id="insRateSummary" class="vm-meta-line" style="justify-content:center; margin-top:2px; text-align:center;">--</p>
           </div>
         </div>
       </article>
     </section>
 
-    <!-- Scrollable Section 3: Pollution Time Machine (Date Picker + Hourly Bar Chart) -->
+    <!-- 3. Pollution History (Stacked Card 3) -->
     <section id="ins-history" class="vm-section">
       <article class="vm-card">
         <div class="vm-section-head">
@@ -180,22 +136,92 @@
               <span class="vm-head-ico" aria-hidden="true">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg>
               </span>
-              <span>Pollution Time Machine</span>
+              <span>Pollution History</span>
             </h2>
-            <p class="vm-section-subtitle">Explore past air quality data</p>
+            <p class="vm-section-subtitle">Explore past air quality and pollutant levels</p>
           </div>
-          <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.9); border:1px solid var(--vm-border-hairline); border-radius:12px; padding:4px 10px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1b8a4b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-            <select id="tmTargetDate" class="vm-select" style="width:auto; min-width:135px; border:none; background:transparent; padding:4px;" aria-label="Select historical date"></select>
+          <div class="vm-trend-tabs" role="tablist" aria-label="History trend period">
+            <button type="button" class="vm-trend-tab active" data-hist-period="daily">Daily</button>
+            <button type="button" class="vm-trend-tab" data-hist-period="weekly">Weekly</button>
+            <button type="button" class="vm-trend-tab" data-hist-period="monthly">Monthly</button>
           </div>
         </div>
-        <div class="vm-chart-box" style="height:240px;">
+
+        <form id="histFilterForm" class="vm-hist-controls">
+          <div class="vm-replay-field">
+            <label for="histCityInput" class="vm-stat-label">City</label>
+            <input id="histCityInput" type="text" list="erCityDatalist" class="vm-input" placeholder="e.g., Mumbai, Delhi" autocomplete="off" />
+          </div>
+          <div class="vm-replay-field">
+            <label for="histStartDate" class="vm-stat-label">From</label>
+            <input id="histStartDate" type="date" class="vm-input" />
+          </div>
+          <div class="vm-replay-field">
+            <label for="histEndDate" class="vm-stat-label">To</label>
+            <input id="histEndDate" type="date" class="vm-input" />
+          </div>
+          <div class="vm-replay-field">
+            <label for="histTimeFilter" class="vm-stat-label">Time of Day</label>
+            <select id="histTimeFilter" class="vm-select">
+              <option value="all" selected>All Hours</option>
+              <option value="morning">Morning (05–11)</option>
+              <option value="afternoon">Afternoon (12–16)</option>
+              <option value="evening">Evening (17–21)</option>
+              <option value="night">Night (22–04)</option>
+            </select>
+          </div>
+          <div class="vm-replay-field">
+            <label for="histPollutantMetric" class="vm-stat-label">Show Level</label>
+            <select id="histPollutantMetric" class="vm-select" aria-label="Select history chart pollutant">
+              <option value="avg_aqi" selected>Composite AQI</option>
+              <option value="pm2_5">PM2.5 (µg/m³)</option>
+              <option value="pm10">PM10 (µg/m³)</option>
+              <option value="no2">NO₂ (µg/m³)</option>
+              <option value="so2">SO₂ (µg/m³)</option>
+              <option value="o3">O₃ (µg/m³)</option>
+            </select>
+          </div>
+          <div class="vm-replay-field vm-replay-submit-wrap">
+            <button id="histApplyBtn" type="submit" class="vm-btn vm-btn-primary vm-btn-sm">Apply</button>
+          </div>
+        </form>
+
+        <div id="histDataNotice" class="vm-banner vm-hidden" style="margin-top:10px;"></div>
+
+        <div class="vm-chart-box" style="height:240px; margin-top:14px;">
           <canvas id="vmTimeMachineBarChart"></canvas>
         </div>
+
+        <div id="histSpikesStrip" class="vm-ins-spikes-grid" style="margin-top:12px;"></div>
+
+        <details style="margin-top:12px;">
+          <summary style="cursor:pointer; font-size:0.86rem; font-weight:700; color:var(--vm-teal-deep);">
+            View Past Records Table (<span id="histRecordsCountBadge">--</span>)
+          </summary>
+          <div class="vm-table-wrap vm-hist-table-scroll" style="margin-top:10px;">
+            <table class="vm-table">
+              <thead>
+                <tr>
+                  <th>Date &amp; Time</th>
+                  <th>AQI</th>
+                  <th>Status</th>
+                  <th>PM2.5</th>
+                  <th>PM10</th>
+                  <th>NO&#8322;</th>
+                  <th>SO&#8322;</th>
+                  <th>O&#8323;</th>
+                </tr>
+              </thead>
+              <tbody id="histRecordsBody">
+                <tr><td colspan="8">Loading historical records...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
       </article>
     </section>
 
-    <!-- Scrollable Section 4: What-If Pollution Simulator -->
+    <!-- 4. What-If Simulator (Stacked Card 4) -->
     <section id="ins-simulator" class="vm-section">
       <article class="vm-card">
         <div class="vm-section-head">
@@ -204,34 +230,32 @@
               <span class="vm-head-ico" aria-hidden="true">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"></path><path d="M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"></path></svg>
               </span>
-              <span>What-If Pollution Simulator</span>
+              <span>What-If Simulator</span>
             </h2>
-            <p class="vm-section-subtitle">See the impact of different solutions (Hypothetical Results)</p>
+            <p class="vm-section-subtitle">See how cutting pollution helps air quality (Estimates only, not real measurements)</p>
           </div>
           <span id="simResultSummary" class="vm-badge-data vm-badge-hypothetical">Adjust sliders</span>
         </div>
 
         <div class="vm-sim-split">
-          <div class="vm-sim-cards-grid">
+          <div class="vm-sim-cards-grid vm-sim-cards-grid-5">
             <div class="vm-sim-tile-card tile-traffic">
               <div class="vm-sim-icon-box" aria-hidden="true">
-                <!-- Car Icon -->
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#10343b" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#10343b" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"></path>
                   <circle cx="7" cy="17" r="2" fill="#0ea5e9"></circle>
                   <path d="M9 17h6"></path>
                   <circle cx="17" cy="17" r="2" fill="#0ea5e9"></circle>
                 </svg>
               </div>
-              <strong style="font-size:0.95rem;">Reduce Traffic</strong>
-              <input id="simTrafficSlider" type="range" min="0" max="80" step="5" value="20" class="vm-range" aria-label="Reduce Traffic percentage" />
+              <strong style="font-size:0.88rem;">Reduce Traffic</strong>
+              <input id="simTrafficSlider" type="range" min="0" max="80" step="5" value="20" class="vm-range" aria-label="Reduce Vehicle Traffic percentage" />
               <span id="simTrafficVal" class="vm-sim-tile-pill">Control 20%</span>
             </div>
 
             <div class="vm-sim-tile-card tile-dust">
               <div class="vm-sim-icon-box" aria-hidden="true">
-                <!-- Construction Crane Icon -->
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#10343b" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#10343b" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 21h18"></path>
                   <path d="M7 21V3"></path>
                   <path d="M3 7h17l-3-4H7"></path>
@@ -239,15 +263,26 @@
                   <rect x="14.5" y="12" width="5" height="4" rx="1" fill="#f59e0b"></rect>
                 </svg>
               </div>
-              <strong style="font-size:0.95rem;">Control Dust</strong>
-              <input id="simDustSlider" type="range" min="0" max="80" step="5" value="15" class="vm-range" aria-label="Control Dust percentage" />
+              <strong style="font-size:0.88rem;">Less Construction</strong>
+              <input id="simDustSlider" type="range" min="0" max="80" step="5" value="15" class="vm-range" aria-label="Reduce Construction Activity percentage" />
               <span id="simDustVal" class="vm-sim-tile-pill">Control 15%</span>
+            </div>
+
+            <div class="vm-sim-tile-card tile-industrial">
+              <div class="vm-sim-icon-box" aria-hidden="true">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#1e293b" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" fill="#0ea5e9" fill-opacity="0.22"></path>
+                  <path d="M17 18h1"></path><path d="M12 18h1"></path><path d="M7 18h1"></path>
+                </svg>
+              </div>
+              <strong style="font-size:0.88rem;">Cut Industry</strong>
+              <input id="simIndustrialSlider" type="range" min="0" max="80" step="5" value="15" class="vm-range" aria-label="Cut Industrial Emissions percentage" />
+              <span id="simIndustrialVal" class="vm-sim-tile-pill">Control 15%</span>
             </div>
 
             <div class="vm-sim-tile-card tile-greenery">
               <div class="vm-sim-icon-box" aria-hidden="true">
-                <!-- Trees Icon -->
-                <svg width="38" height="38" viewBox="0 0 64 64" fill="none">
+                <svg width="32" height="32" viewBox="0 0 64 64" fill="none">
                   <path d="M22 54V36" stroke="#5c4033" stroke-width="4" stroke-linecap="round"></path>
                   <circle cx="22" cy="27" r="11" fill="#15803d"></circle>
                   <path d="M42 54V32" stroke="#5c4033" stroke-width="4.2" stroke-linecap="round"></path>
@@ -256,24 +291,31 @@
                   <path d="M12 54H52" stroke="#15803d" stroke-width="3" stroke-linecap="round"></path>
                 </svg>
               </div>
-              <strong style="font-size:0.95rem;">Increase Greenery</strong>
+              <strong style="font-size:0.88rem;">More Greenery</strong>
               <input id="simGreenerySlider" type="range" min="0" max="60" step="5" value="25" class="vm-range" aria-label="Increase Greenery percentage" />
               <span id="simGreeneryVal" class="vm-sim-tile-pill">Boost 25%</span>
+            </div>
+
+            <div class="vm-sim-tile-card tile-burning">
+              <div class="vm-sim-icon-box" aria-hidden="true">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" fill="#fca5a5"></path>
+                </svg>
+              </div>
+              <strong style="font-size:0.88rem;">Stop Burning</strong>
+              <input id="simBurningSlider" type="range" min="0" max="90" step="5" value="20" class="vm-range" aria-label="Reduce Waste Burning percentage" />
+              <span id="simBurningVal" class="vm-sim-tile-pill">Control 20%</span>
             </div>
           </div>
 
           <div class="vm-sim-right-panel">
-            <div class="vm-eco-callout" style="padding:16px 18px; border-radius:16px; text-align:center; align-items:center;">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path>
-                <path d="M9 18h6"></path>
-                <path d="M10 22h4"></path>
-              </svg>
-              <strong style="font-size:1.02rem; color:#14532d; line-height:1.35;">A greener city can help us breathe better!</strong>
-              <div style="font-size:1.1rem; font-weight:800; color:var(--vm-teal-deep);">
+            <div class="vm-eco-callout" style="padding:15px 16px; border-radius:16px; text-align:center; align-items:center;">
+              <strong style="font-size:0.94rem; color:#14532d;">Before vs. Estimated After</strong>
+              <div style="font-size:1.08rem; font-weight:800; color:var(--vm-teal-deep); margin-top:4px;">
                 <span id="simBaseAqi">--</span> &rarr; <span id="simOutAqi" style="color:var(--vm-green-primary);">--</span>
               </div>
-              <p id="simImpactExplanation" class="vm-meta-line" style="justify-content:center; text-align:center;">Hypothetical estimate based on current pollutant mix.</p>
+              <span id="simOutPm25" class="vm-meta-line" style="margin-top:2px;">PM2.5: --</span>
+              <p id="simImpactExplanation" class="vm-meta-line" style="justify-content:center; text-align:center; margin-top:4px;">Move any slider to preview estimated air quality improvement.</p>
             </div>
             <div style="display:flex; gap:8px; justify-content:center;">
               <button id="simRunBtn" type="button" class="vm-btn vm-btn-primary vm-btn-sm" style="flex:1;">Simulate</button>
@@ -284,10 +326,10 @@
       </article>
     </section>
 
-    <!-- Scrollable Section 5: Pollution Event Replay -->
+    <!-- 5. Pollution Event Replay (Compact Box, Community Report Cases + Simple Explanation, No Map) -->
     <section id="ins-event-replay" class="vm-section">
-      <article class="vm-card">
-        <div class="vm-section-head">
+      <article class="vm-card vm-er-compact-card">
+        <div class="vm-section-head" style="margin-bottom:10px;">
           <div>
             <h2 class="vm-section-title vm-title-with-ico">
               <span class="vm-head-ico" aria-hidden="true">
@@ -295,200 +337,79 @@
               </span>
               <span>Pollution Event Replay</span>
             </h2>
-            <p class="vm-section-subtitle">Investigate historical pollution spikes alongside weather conditions, community observations, and evidence-grounded AI analysis</p>
           </div>
-          <span id="erStatusBadge" class="vm-badge-data vm-badge-verified">Historical Replay</span>
+          <span id="erStatusBadge" class="vm-badge-data vm-badge-verified">Community Cases</span>
         </div>
 
-        <!-- Step 1: Select Location, Date Range, Pollutant & Explainable Threshold -->
-        <form id="erFilterForm" class="vm-replay-controls">
+        <form id="erFilterForm" class="vm-er-compact-bar">
           <div class="vm-replay-field">
             <label for="erCityInput" class="vm-stat-label">City</label>
-            <input id="erCityInput" type="text" list="erCityDatalist" class="vm-input" placeholder="e.g., Delhi, Mumbai, Bengaluru" autocomplete="off" required />
+            <input id="erCityInput" type="text" list="erCityDatalist" class="vm-input" placeholder="e.g., Mumbai, Delhi" autocomplete="off" required />
             <datalist id="erCityDatalist"></datalist>
-          </div>
-          <div class="vm-replay-field">
-            <label for="erStartDate" class="vm-stat-label">From Date</label>
-            <input id="erStartDate" type="date" class="vm-input" required />
-          </div>
-          <div class="vm-replay-field">
-            <label for="erEndDate" class="vm-stat-label">To Date</label>
-            <input id="erEndDate" type="date" class="vm-input" required />
           </div>
           <div class="vm-replay-field">
             <label for="erPollutantSelect" class="vm-stat-label">Pollutant</label>
             <select id="erPollutantSelect" class="vm-select">
-              <option value="pm2_5" selected>PM2.5 (µg/m³)</option>
-              <option value="pm10">PM10 (µg/m³)</option>
-              <option value="no2">NO₂ (µg/m³)</option>
-              <option value="so2">SO₂ (µg/m³)</option>
-              <option value="co">CO (µg/m³)</option>
-              <option value="o3">O₃ (µg/m³)</option>
+              <option value="pm2_5" selected>PM2.5</option>
+              <option value="pm10">PM10</option>
+              <option value="no2">NO₂</option>
+              <option value="so2">SO₂</option>
+              <option value="co">CO</option>
+              <option value="o3">O₃</option>
             </select>
           </div>
           <div class="vm-replay-field">
-            <label for="erThresholdSelect" class="vm-stat-label">Spike Threshold</label>
-            <select id="erThresholdSelect" class="vm-select">
-              <option value="20">+20% above baseline</option>
-              <option value="35" selected>+35% above baseline (Default)</option>
-              <option value="50">+50% above baseline</option>
-              <option value="75">+75% above baseline</option>
-              <option value="100">+100% above baseline</option>
-            </select>
+            <label for="erStartDate" class="vm-stat-label">From</label>
+            <input id="erStartDate" type="date" class="vm-input" required />
+          </div>
+          <div class="vm-replay-field">
+            <label for="erEndDate" class="vm-stat-label">To</label>
+            <input id="erEndDate" type="date" class="vm-input" required />
           </div>
           <div class="vm-replay-field vm-replay-submit-wrap">
-            <button id="erDetectBtn" type="submit" class="vm-btn vm-btn-primary vm-btn-sm">Detect Events</button>
+            <button id="erDetectBtn" type="submit" class="vm-btn vm-btn-primary vm-btn-sm">Load Cases</button>
           </div>
         </form>
 
-        <div id="erMessageBanner" class="vm-banner vm-hidden" style="margin-top:12px;"></div>
-        <p id="erBaselineRuleNote" class="vm-meta-line" style="margin-top:10px;"></p>
+        <div id="erMessageBanner" class="vm-banner vm-hidden" style="margin-top:10px;"></div>
 
-        <!-- Step 2: Detected Pollution Events -->
-        <div id="erDetectedWrap" class="vm-replay-block vm-hidden">
-          <div class="vm-replay-block-head">
-            <h3 class="vm-replay-subheading">Detected Pollution Events</h3>
-            <span id="erEventsCountTag" class="vm-status-tag vm-status-moderate">0 Events</span>
+        <div id="erDetectedWrap" style="margin-top:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+            <label for="erCaseSelect" class="vm-stat-label">Cases from Community Reports</label>
+            <span id="erReportsCountTag" class="vm-meta-line">Loading community cases...</span>
           </div>
-          <div id="erEventsList" class="vm-replay-events-grid"></div>
+          <select id="erCaseSelect" class="vm-select" aria-label="Select a case from Community Reports">
+            <option value="">Loading community cases...</option>
+          </select>
         </div>
 
-        <!-- Steps 3–7: Selected Event Replay Workspace -->
-        <div id="erReplayWorkspace" class="vm-replay-workspace vm-hidden">
-          <!-- Step 3: Interactive Pollution Timeline -->
-          <div class="vm-replay-subcard">
-            <div class="vm-replay-block-head">
-              <div>
-                <h3 class="vm-replay-subheading">Interactive Pollution Timeline</h3>
-                <p id="erTimelineSubtitle" class="vm-meta-line">Click or hover any hourly point on the graph to inspect readings and weather.</p>
-              </div>
-              <span id="erSelectedEventPill" class="vm-status-tag vm-status-bad">--</span>
-            </div>
+        <div id="erReplayWorkspace" class="vm-hidden" style="margin-top:12px;">
+          <div id="erSelectedCaseCard" class="vm-er-case-card"></div>
 
-            <div class="vm-replay-kpi-strip">
-              <div class="vm-replay-kpi">
-                <span class="vm-stat-label">Start Time</span>
-                <strong id="erKpiStart">--</strong>
-              </div>
-              <div class="vm-replay-kpi">
-                <span class="vm-stat-label">Peak Time</span>
-                <strong id="erKpiPeakTime">--</strong>
-              </div>
-              <div class="vm-replay-kpi">
-                <span class="vm-stat-label">End Time</span>
-                <strong id="erKpiEnd">--</strong>
-              </div>
-              <div class="vm-replay-kpi">
-                <span class="vm-stat-label">Baseline Level</span>
-                <strong id="erKpiBaseline">--</strong>
-              </div>
-              <div class="vm-replay-kpi">
-                <span class="vm-stat-label">Max Recorded</span>
-                <strong id="erKpiPeakVal" style="color:#dc2626;">--</strong>
-              </div>
+          <div class="vm-replay-playback-bar" style="margin-top:10px;">
+            <div class="vm-replay-playback-btns">
+              <button id="erStepPrevBtn" type="button" class="vm-btn vm-btn-outline vm-btn-sm" aria-label="Previous hour">&lsaquo; Prev</button>
+              <button id="erPlayPauseBtn" type="button" class="vm-btn vm-btn-primary vm-btn-sm">Play</button>
+              <button id="erStepNextBtn" type="button" class="vm-btn vm-btn-outline vm-btn-sm" aria-label="Next hour">Next &rsaquo;</button>
             </div>
-
-            <div class="vm-chart-box-lg" style="height:290px; margin-top:12px;">
-              <canvas id="vmEventReplayChart"></canvas>
-            </div>
-
-            <div id="erPointInspector" class="vm-replay-inspector">
-              Select or hover any point on the timeline to inspect its exact concentration and historical weather.
-            </div>
+            <input id="erReplayScrubber" type="range" min="0" max="0" value="0" class="vm-range" style="flex:1; min-width:140px;" aria-label="Replay timeline step" />
+            <span id="erStepStateBadge" class="vm-status-tag vm-status-moderate">Step 1</span>
           </div>
 
-          <!-- Step 4 & Step 5 Split: Historical Weather Correlation + Air Guardian Network -->
-          <div class="vm-replay-two-col">
-            <!-- Step 4: Historical Weather Correlation -->
-            <div class="vm-replay-subcard">
-              <div class="vm-replay-block-head">
-                <div>
-                  <h3 class="vm-replay-subheading">Historical Weather Correlation</h3>
-                  <p id="erWeatherAvailabilityNote" class="vm-meta-line">Aligned strictly to the selected event timeline</p>
-                </div>
-                <span id="erWeatherStatusTag" class="vm-status-tag vm-status-good">Historical</span>
-              </div>
-
-              <div id="erWeatherUnavailableBox" class="vm-replay-empty vm-hidden">
-                Historical weather data is unavailable for this event period.
-              </div>
-
-              <div id="erWeatherContent">
-                <div class="vm-replay-weather-grid">
-                  <div class="vm-replay-weather-tile">
-                    <span class="vm-stat-label">Wind Speed</span>
-                    <strong id="erWxWindSpeed">--</strong>
-                    <span id="erWxWindMeta" class="vm-meta-line">--</span>
-                  </div>
-                  <div class="vm-replay-weather-tile">
-                    <span class="vm-stat-label">Wind Direction</span>
-                    <strong id="erWxWindDir">--</strong>
-                    <span id="erWxWindDirMeta" class="vm-meta-line">--</span>
-                  </div>
-                  <div class="vm-replay-weather-tile">
-                    <span class="vm-stat-label">Temperature</span>
-                    <strong id="erWxTemp">--</strong>
-                    <span id="erWxTempMeta" class="vm-meta-line">--</span>
-                  </div>
-                  <div class="vm-replay-weather-tile">
-                    <span class="vm-stat-label">Humidity</span>
-                    <strong id="erWxHumidity">--</strong>
-                    <span id="erWxHumidityMeta" class="vm-meta-line">--</span>
-                  </div>
-                </div>
-                <div class="vm-chart-box" style="height:200px; margin-top:12px;">
-                  <canvas id="vmEventWeatherChart"></canvas>
-                </div>
-              </div>
-            </div>
-
-            <!-- Step 5: Air Guardian Network Integration -->
-            <div class="vm-replay-subcard">
-              <div class="vm-replay-block-head">
-                <div>
-                  <h3 class="vm-replay-subheading">Air Guardian Network Reports</h3>
-                  <p class="vm-meta-line">Actual citizen reports matching event city/area and ±12h window</p>
-                </div>
-                <span id="erReportsCountTag" class="vm-status-tag vm-status-satisfactory">0 Matched</span>
-              </div>
-
-              <div id="erReportsEmptyBox" class="vm-replay-empty vm-hidden">
-                No matching community reports found for this event.
-              </div>
-
-              <div id="erReportsContent">
-                <div id="erReportsMap" class="vm-replay-map" aria-label="Matched Air Guardian reports map"></div>
-                <div id="erReportsList" class="vm-replay-reports-list"></div>
-                <div id="erReportDetailBox" class="vm-replay-report-detail vm-hidden"></div>
-              </div>
-            </div>
+          <div id="erPointInspector" class="vm-replay-inspector" style="margin-top:8px;">
+            Press Play or move the slider to watch how pollution levels changed.
           </div>
 
-          <!-- Step 6: AI-Powered Event Explanation -->
-          <div class="vm-replay-subcard">
-            <div class="vm-replay-block-head">
-              <div>
-                <h3 class="vm-replay-subheading">AI-Powered Event Explanation</h3>
-                <p class="vm-meta-line">Grounded in measured concentrations, historical weather, and Air Guardian reports</p>
-              </div>
-              <button id="erExplainBtn" type="button" class="vm-btn vm-btn-outline vm-btn-sm">Refresh Explanation</button>
-            </div>
-            <div id="erAiExplanationBox" class="vm-replay-ai-box">
-              Select an event to generate an evidence-grounded explanation.
-            </div>
+          <div class="vm-chart-box" style="height:190px; margin-top:10px;">
+            <canvas id="vmEventReplayChart"></canvas>
           </div>
 
-          <!-- Step 7: Event Summary & Downloadable PDF Report -->
-          <div class="vm-replay-subcard">
-            <div class="vm-replay-block-head">
-              <div>
-                <h3 class="vm-replay-subheading">Event Summary &amp; Report</h3>
-                <p class="vm-meta-line">Structured investigation summary ready for download</p>
-              </div>
-              <button id="erDownloadPdfBtn" type="button" class="vm-btn vm-btn-primary vm-btn-sm">Download PDF Report</button>
-            </div>
-            <div id="erSummaryGrid" class="vm-replay-summary-grid"></div>
+          <div class="vm-er-explain-box">
+            <strong style="font-size:0.88rem; color:#14532d; display:block; margin-bottom:4px;">Explanation</strong>
+            <p id="erSimpleSummary" class="vm-er-simple-summary"></p>
           </div>
+
+          <div id="erReportsList" class="vm-er-reports-grid" style="margin-top:10px;"></div>
         </div>
       </article>
     </section>
@@ -503,12 +424,11 @@
         <a href="alerts.html">Alerts</a>
         <a href="reports.html">Reports</a>
         <a href="community.html">Community</a>
-        <a href="profile.html">Profile</a>
+        <a href="profile.html">Settings</a>
       </div>
     </div>
   </footer>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="javascript/api.js"></script>
   <script src="javascript/main.js"></script>

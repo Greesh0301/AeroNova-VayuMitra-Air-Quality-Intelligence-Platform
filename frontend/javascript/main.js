@@ -145,6 +145,38 @@
   }
 
   function setupNavigation() {
+    const navLinksWrap = document.querySelector(".vm-nav-links");
+    if (navLinksWrap && !navLinksWrap.querySelector('a[href="greensteps.html"]')) {
+      const gsLink = document.createElement("a");
+      gsLink.href = "greensteps.html";
+      gsLink.className = "vm-nav-link";
+      gsLink.textContent = "GreenSteps";
+      const profLink = navLinksWrap.querySelector('a[href="profile.html"]');
+      if (profLink) navLinksWrap.insertBefore(gsLink, profLink);
+      else navLinksWrap.appendChild(gsLink);
+    }
+
+    const mobileMenuEl = document.getElementById("vmMobileMenu");
+    if (mobileMenuEl && !mobileMenuEl.querySelector('a[href="greensteps.html"]')) {
+      const gsMob = document.createElement("a");
+      gsMob.href = "greensteps.html";
+      gsMob.className = "vm-nav-link";
+      gsMob.textContent = "GreenSteps";
+      const profMob = mobileMenuEl.querySelector('a[href="profile.html"]');
+      if (profMob) mobileMenuEl.insertBefore(gsMob, profMob);
+      else mobileMenuEl.appendChild(gsMob);
+    }
+
+    const footerLinksEl = document.querySelector(".vm-footer-links");
+    if (footerLinksEl && !footerLinksEl.querySelector('a[href="greensteps.html"]')) {
+      const gsFoot = document.createElement("a");
+      gsFoot.href = "greensteps.html";
+      gsFoot.textContent = "GreenSteps";
+      const profFoot = footerLinksEl.querySelector('a[href="profile.html"]');
+      if (profFoot) footerLinksEl.insertBefore(gsFoot, profFoot);
+      else footerLinksEl.appendChild(gsFoot);
+    }
+
     const currentFile = window.location.pathname.split("/").pop() || "index.html";
     document.querySelectorAll(".vm-nav-link").forEach((link) => {
       const href = link.getAttribute("href");
@@ -214,8 +246,7 @@
     const hour = new Date().getHours();
     if (hour >= 5 && hour < 12) return "Good morning!";
     if (hour >= 12 && hour < 17) return "Good afternoon!";
-    if (hour >= 17 && hour < 21) return "Good evening!";
-    return "Good night!";
+    return "Good evening!";
   }
 
   function resolveCityBackground(cityName) {
@@ -250,6 +281,9 @@
     const navInput = document.getElementById("vmNavSearchInput");
     if (!navForm || !navInput) return;
 
+    navInput.removeAttribute("list");
+    navInput.setAttribute("autocomplete", "off");
+
     const stored = getStoredLocationParams();
     if (stored.city) {
       navInput.value = stored.city;
@@ -273,8 +307,6 @@
   async function setupIndiaLocationDatalist() {
     if (!window.VayuApi || typeof window.VayuApi.getIndiaLocations !== "function") return;
     const inputIds = [
-      "vmNavSearchInput",
-      "repCompareCityInput",
       "profDefaultCity",
       "twinLocCity",
       "vmRouteOrigin",

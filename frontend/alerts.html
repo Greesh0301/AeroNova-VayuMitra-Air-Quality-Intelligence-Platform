@@ -41,7 +41,7 @@
         <a href="alerts.html" class="vm-nav-link active">Alerts</a>
         <a href="reports.html" class="vm-nav-link">Reports</a>
         <a href="community.html" class="vm-nav-link">Community</a>
-        <a href="profile.html" class="vm-nav-link">Profile</a>
+        <a href="profile.html" class="vm-nav-link">Settings</a>
       </div>
       <form id="vmNavSearchForm" class="vm-nav-search" role="search" aria-label="Search city air quality">
         <div class="vm-nav-search-box">
@@ -67,7 +67,7 @@
       <a href="alerts.html" class="vm-nav-link active">Alerts</a>
       <a href="reports.html" class="vm-nav-link">Reports</a>
       <a href="community.html" class="vm-nav-link">Community</a>
-      <a href="profile.html" class="vm-nav-link">Profile</a>
+      <a href="profile.html" class="vm-nav-link">Settings</a>
     </div>
   </header>
 
@@ -85,7 +85,6 @@
             Stay informed. Stay safe. &middot; <strong id="alertsLocation">--</strong>
           </p>
         </div>
-        <span class="vm-badge-data vm-badge-verified">Live Updates &middot; <span id="alertsUpdatedAt">--</span></span>
       </div>
     </section>
 
@@ -129,34 +128,54 @@
       </article>
 
       <div class="vm-two-col">
-        <article class="vm-card" style="display:flex; flex-direction:column; justify-content:space-between; align-items:center; text-align:center;">
+        <article class="vm-card" style="display:flex; flex-direction:column; justify-content:space-between; gap:12px;">
           <h2 class="vm-section-title vm-title-with-ico" style="font-size:1.15rem; width:100%; text-align:left;">
             <span class="vm-head-ico" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
             </span>
             <span>Current AQI</span>
           </h2>
-          <div id="vmAlertAqiGauge" style="margin:10px 0;"></div>
+          <div id="vmAlertAqiGauge" style="margin:2px auto;"></div>
           <div id="vmAlertMaskStrip" class="vm-alert-mask-strip">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
             </svg>
             <span id="vmAlertMaskNote">Loading guidance...</span>
           </div>
+          <div class="vm-alert-aqi-meta-grid">
+            <div class="vm-alert-meta-tile">
+              <span class="vm-alert-meta-label">Health Risk Tier</span>
+              <strong id="vmAlertCardRiskScore">--</strong>
+            </div>
+            <div class="vm-alert-meta-tile">
+              <span class="vm-alert-meta-label">Active Triggers</span>
+              <strong id="vmAlertCardTriggers">--</strong>
+            </div>
+            <div class="vm-alert-meta-tile">
+              <span class="vm-alert-meta-label">Sensitive Groups</span>
+              <strong id="vmAlertCardSensitive">--</strong>
+            </div>
+            <div class="vm-alert-meta-tile">
+              <span class="vm-alert-meta-label">Outdoor Guidance</span>
+              <strong id="vmAlertCardOutdoor">--</strong>
+            </div>
+          </div>
         </article>
 
         <article class="vm-card">
-          <div class="vm-section-head" style="margin-bottom:10px;">
+          <div class="vm-section-head" style="margin-bottom:10px; gap:10px; flex-wrap:wrap;">
             <h2 class="vm-section-title vm-title-with-ico" style="font-size:1.15rem;">
               <span class="vm-head-ico" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
               </span>
-              <span>Affected Area</span>
+              <span>Affected Area Map</span>
             </h2>
-            <span id="vmAlertRiskScorePill" class="vm-badge-data">Risk Score: --</span>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span id="vmAlertRiskScorePill" class="vm-badge-data">Risk Score: --</span>
+            </div>
           </div>
           <div class="vm-map-wrap">
-            <div id="vmAlertMap" class="vm-map-container" style="height:290px;" aria-label="Affected area pollution map"></div>
+            <div id="vmAlertMap" class="vm-map-container" style="height:290px;" aria-label="Affected area pollution zones map"></div>
             <div class="vm-map-legend-float">
               <span><span class="vm-legend-dot" style="background:#16A34A;"></span>Good</span>
               <span><span class="vm-legend-dot" style="background:#D97706;"></span>Moderate</span>
@@ -172,9 +191,9 @@
       </div>
     </section>
 
-    <!-- Scrollable Section 2: Alert Details, Safety Tips, Emergency Actions -->
+    <!-- Scrollable Section 2: Alert Details, Safety Tips, Emergency Actions & Emergency Contact Numbers -->
     <section id="vmAlertSafetySection" class="vm-section">
-      <div class="vm-kpi-row-3">
+      <div class="vm-two-col">
         <article class="vm-card">
           <h3 class="vm-title-with-ico" style="font-size:1.05rem; margin-bottom:12px;">
             <span class="vm-head-ico" style="width:22px; height:22px;" aria-hidden="true">
@@ -221,13 +240,52 @@
             <span>Emergency Actions</span>
           </h3>
           <div style="display:flex; flex-direction:column; gap:10px; margin:auto 0;">
-            <a href="routes.html?escape=1" class="vm-alert-action-btn">
+            <a href="routes.html" class="vm-alert-action-btn">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
               <span>Find Cleaner Route</span>
             </a>
             <a href="routes.html" class="vm-alert-action-btn">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
               <span>Check Nearby Safe Zones</span>
+            </a>
+            <a href="community.html" class="vm-alert-action-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span>Report Smoke or Fire Source</span>
+            </a>
+          </div>
+        </article>
+
+        <article class="vm-card">
+          <h3 class="vm-title-with-ico" style="font-size:1.05rem; margin-bottom:12px;">
+            <span class="vm-head-ico" style="width:22px; height:22px; color:#dc2626;" aria-hidden="true">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+            </span>
+            <span>Emergency Contact Numbers (India)</span>
+          </h3>
+          <div class="vm-emergency-contacts-grid">
+            <a href="tel:112" class="vm-emergency-contact-tile">
+              <span class="vm-emergency-role">National Emergency</span>
+              <strong class="vm-emergency-num">112</strong>
+            </a>
+            <a href="tel:100" class="vm-emergency-contact-tile">
+              <span class="vm-emergency-role">Police</span>
+              <strong class="vm-emergency-num">100</strong>
+            </a>
+            <a href="tel:101" class="vm-emergency-contact-tile">
+              <span class="vm-emergency-role">Fire Brigade</span>
+              <strong class="vm-emergency-num">101</strong>
+            </a>
+            <a href="tel:108" class="vm-emergency-contact-tile">
+              <span class="vm-emergency-role">Ambulance / Medical</span>
+              <strong class="vm-emergency-num">108 / 102</strong>
+            </a>
+            <a href="tel:1078" class="vm-emergency-contact-tile">
+              <span class="vm-emergency-role">Disaster Helpline</span>
+              <strong class="vm-emergency-num">1078</strong>
+            </a>
+            <a href="tel:1800114000" class="vm-emergency-contact-tile">
+              <span class="vm-emergency-role">CPCB Pollution Control</span>
+              <strong class="vm-emergency-num">1800-11-4000</strong>
             </a>
           </div>
         </article>
@@ -244,7 +302,7 @@
         <a href="routes.html">Routes</a>
         <a href="reports.html">Reports</a>
         <a href="community.html">Community</a>
-        <a href="profile.html">Profile</a>
+        <a href="profile.html">Settings</a>
       </div>
     </div>
   </footer>

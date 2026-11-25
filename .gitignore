@@ -6,3 +6,7 @@ venv/
 *.log
 database/uploads/
 .DS_Store
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo

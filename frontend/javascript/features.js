@@ -3,10 +3,12 @@
   "use strict";
 
   const chartRegistry = {};
+  const chartConfigRegistry = {};
 
   function renderOrReplaceChart(canvasId, config) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof window.Chart === "undefined") return null;
+    chartConfigRegistry[canvasId] = config;
     if (chartRegistry[canvasId]) {
       chartRegistry[canvasId].destroy();
     }
@@ -51,18 +53,28 @@
     if (!el) return;
     const hasNum = aqiValue != null && !Number.isNaN(Number(aqiValue));
     const num = hasNum ? Math.round(Number(aqiValue)) : null;
-    const pct = hasNum ? Math.max(0.03, Math.min(1, num / 400)) : 0;
+    const pct = hasNum ? Math.max(0.04, Math.min(1, num / 400)) : 0;
     const arcLen = 251.33;
     const offset = arcLen * (1 - pct);
     const color = hasNum ? aqiColorHex(num) : "#64748B";
     const catLabel = categoryText || (hasNum ? naqiCategoryFromValue(num) : "Unavailable");
     const catCls = levelBadgeClass(catLabel);
+    const gradId = `vmGaugeGrad_${String(containerId).replace(/[^a-zA-Z0-9_]/g, "")}`;
 
     el.innerHTML = `
       <svg class="vm-gauge-svg" viewBox="0 0 200 118" role="img" aria-label="AQI ${num != null ? num : "--"} ${window.VayuMain.escapeHtml(catLabel)}">
-        <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(16,52,59,0.10)" stroke-width="16" stroke-linecap="round"></path>
-        <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="${color}" stroke-width="16" stroke-linecap="round"
-          stroke-dasharray="${arcLen}" stroke-dashoffset="${offset.toFixed(1)}" style="transition:stroke-dashoffset 450ms ease, stroke 300ms ease;"></path>
+        <defs>
+          <linearGradient id="${gradId}" x1="0%" y1="50%" x2="100%" y2="50%">
+            <stop offset="0%" stop-color="#22C55E"/>
+            <stop offset="42%" stop-color="#84CC16"/>
+            <stop offset="68%" stop-color="#FACC15"/>
+            <stop offset="86%" stop-color="#F97316"/>
+            <stop offset="100%" stop-color="#EF4444"/>
+          </linearGradient>
+        </defs>
+        <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(16,52,59,0.10)" stroke-width="15" stroke-linecap="round"></path>
+        <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#${gradId})" stroke-width="15" stroke-linecap="round"
+          stroke-dasharray="${arcLen}" stroke-dashoffset="${offset.toFixed(1)}" style="transition:stroke-dashoffset 450ms ease;"></path>
       </svg>
       <div class="vm-gauge-center">
         <div class="vm-gauge-num" style="color:${color};">${num != null ? num : "--"}</div>
@@ -72,13 +84,57 @@
     `;
   }
 
+  function pollutantStatusInfo(id, rawVal) {
+    if (rawVal == null || Number.isNaN(Number(rawVal))) {
+      return { label: "N/A", color: "#64748B", pct: 0 };
+    }
+    const v = Number(rawVal);
+    const thresholds = {
+      pm2_5: [30, 60, 90, 120],
+      pm10: [50, 100, 250, 350],
+      no2: [40, 80, 180, 280],
+      so2: [40, 80, 380, 800],
+      co: [1000, 2000, 10000, 17000],
+      o3: [50, 100, 168, 208],
+    };
+    const [t1, t2, t3, t4] = thresholds[id] || [50, 100, 200, 300];
+    const pct = Math.min(100, Math.max(7, Math.round((v / (t3 * 1.15)) * 100)));
+    if (v <= t1) return { label: "(Good)", color: "#16A34A", pct };
+    if (v <= t2) return { label: "(Satisfactory)", color: "#059669", pct };
+    if (v <= t3) return { label: "(Moderate)", color: "#D97706", pct };
+    if (v <= t4) return { label: "(Poor)", color: "#EA580C", pct };
+    return { label: "(Very Poor)", color: "#DC2626", pct };
+  }
+
+  function characterAssetsForLevel(level) {
+    const key = String(level || "good").toLowerCase();
+    if (key === "moderate") {
+      return { jpg: "assets/images/aqi-moderate.jpg", svg: "assets/images/aqi-moderate.svg" };
+    }
+    if (key === "bad") {
+      return { jpg: "assets/images/aqi-bad.jpg", svg: "assets/images/aqi-bad.svg" };
+    }
+    if (key === "worse" || key === "severe") {
+      return { jpg: "assets/images/aqi-worse.jpg", svg: "assets/images/aqi-worse.svg" };
+    }
+    return { jpg: "assets/images/aqi-good.jpg", svg: "assets/images/aqi-good.svg" };
+  }
+
   /* =========================================================
      1. DASHBOARD (index.html)
      ========================================================= */
   async function initDashboardPage() {
+    let activeDashboardParams = window.VayuMain.getStoredLocationParams();
+    let latestDashboardData = null;
+    let activeTrendRange = "today";
+    const timeMachineCache = {};
+
     const greetingEl = document.getElementById("vmTimeGreeting");
     if (greetingEl) {
-      greetingEl.textContent = window.VayuMain.getTimeGreeting();
+      const baseGreeting = window.VayuMain.getTimeGreeting();
+      const authUser = window.VayuMain.getAuthUser();
+      const firstName = authUser && authUser.name ? String(authUser.name).trim().split(/\s+/)[0] : "";
+      greetingEl.textContent = firstName ? `${baseGreeting.replace(/!$/, "")}, ${firstName}!` : baseGreeting;
     }
 
     const dateEl = document.getElementById("vmHeroDate");
@@ -88,20 +144,132 @@
 
     const geoBtn = document.getElementById("vmUseLocationBtn");
 
+    function renderTrendSeries(labels, values, emptyMsg) {
+      const trendEmpty = document.getElementById("vmTrendEmpty");
+      if (!labels.length) {
+        if (trendEmpty) {
+          trendEmpty.textContent = emptyMsg || "No trend data available yet.";
+          trendEmpty.classList.remove("vm-hidden");
+        }
+        return;
+      }
+      if (trendEmpty) trendEmpty.classList.add("vm-hidden");
+      renderOrReplaceChart("vmDashboardTrendChart", {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "AQI",
+              data: values,
+              borderColor: "#16A34A",
+              backgroundColor: (ctx) => {
+                const chart = ctx.chart;
+                const area = chart.chartArea;
+                if (!area) return "rgba(22, 163, 74, 0.16)";
+                const grad = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+                grad.addColorStop(0, "rgba(22, 163, 74, 0.28)");
+                grad.addColorStop(1, "rgba(22, 163, 74, 0.02)");
+                return grad;
+              },
+              fill: true,
+              tension: 0.36,
+              borderWidth: 2.5,
+              pointRadius: 3.5,
+              pointHoverRadius: 5,
+              pointBackgroundColor: "#16A34A",
+              pointBorderColor: "#ffffff",
+              pointBorderWidth: 1.5,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: "rgba(16, 52, 59, 0.06)" },
+              ticks: { font: { size: 11 } },
+            },
+            x: {
+              grid: { display: false },
+              ticks: { maxTicksLimit: 7, font: { size: 11 } },
+            },
+          },
+        },
+      });
+    }
+
+    async function updateTrendChartForRange(range) {
+      activeTrendRange = range;
+      if (!latestDashboardData) return;
+      if (range === "today") {
+        const history = latestDashboardData.hourly_history || [];
+        renderTrendSeries(
+          history.map((h) => window.VayuMain.formatHourLabel(h.time)),
+          history.map((h) => h.aqi),
+          "No hourly data available yet."
+        );
+        return;
+      }
+
+      const cityKey = (latestDashboardData.location && latestDashboardData.location.name) || activeDashboardParams.city || "default";
+      try {
+        let tm = timeMachineCache[cityKey];
+        if (!tm) {
+          tm = await window.VayuApi.getTimeMachine(activeDashboardParams);
+          timeMachineCache[cityKey] = tm;
+        }
+        const daily = Array.isArray(tm.daily_series) ? tm.daily_series : [];
+        const sliceCount = range === "7d" ? 7 : 30;
+        const subset = daily.slice(-sliceCount);
+        renderTrendSeries(
+          subset.map((d) => {
+            const parts = String(d.date || "").split("-");
+            return parts.length === 3 ? `${parts[2]}/${parts[1]}` : d.date;
+          }),
+          subset.map((d) => d.avg_aqi),
+          `No ${range === "7d" ? "7-day" : "30-day"} historical readings returned yet.`
+        );
+      } catch (_err) {
+        renderTrendSeries([], [], "Unable to load multi-day trend right now.");
+      }
+    }
+
+    document.querySelectorAll("#vmTrendRangeTabs .vm-trend-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const range = btn.getAttribute("data-range") || "today";
+        document.querySelectorAll("#vmTrendRangeTabs .vm-trend-tab").forEach((b) => {
+          const isSel = b === btn;
+          b.classList.toggle("active", isSel);
+          b.setAttribute("aria-selected", String(isSel));
+        });
+        updateTrendChartForRange(range);
+      });
+    });
+
     async function loadDashboard(params, isInitial) {
+      activeDashboardParams = params;
       window.VayuMain.showBanner("vmDashboardBanner", "", "info");
       try {
         const data = await window.VayuApi.getDashboard(params);
+        latestDashboardData = data;
         window.VayuMain.updateHeaderWeather(data);
         renderDashboardData(data);
+        await updateTrendChartForRange(activeTrendRange);
       } catch (err) {
         if (isInitial && (params.city || params.lat != null)) {
           window.VayuMain.clearStoredLocation();
           window.VayuMain.updateCityBackground("Mumbai");
           try {
             const fallback = await window.VayuApi.getDashboard({ city: "Mumbai" });
+            activeDashboardParams = { city: "Mumbai" };
+            latestDashboardData = fallback;
             window.VayuMain.updateHeaderWeather(fallback);
             renderDashboardData(fallback);
+            await updateTrendChartForRange(activeTrendRange);
             window.VayuMain.showBanner("vmDashboardBanner", "VayuMitra supports locations within India only. Reset view to Mumbai.", "info");
             return;
           } catch (_fallbackErr) {}
@@ -127,19 +295,19 @@
           window.VayuMain.showBanner("vmDashboardBanner", err.message, "error");
         } finally {
           geoBtn.disabled = false;
-          geoBtn.textContent = "Use my location";
+          geoBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg><span>Use my location</span>`;
         }
       });
     }
 
-    const initialParams = window.VayuMain.getStoredLocationParams();
-    await loadDashboard(initialParams, true);
+    await loadDashboard(activeDashboardParams, true);
   }
 
   function renderDashboardData(data) {
     const cls = data.classification || {};
     const level = cls.level || "good";
     const loc = data.location || {};
+    const cityName = loc.name || "Mumbai";
     const weather = data.weather || {};
     const pollutants = data.pollutants || {};
     const unitMode = data.pollutant_unit_mode || "ugm3";
@@ -147,8 +315,10 @@
     const heroLoc = document.getElementById("vmHeroLocation");
     if (heroLoc) {
       const region = [loc.name, loc.admin1, loc.country].filter(Boolean).join(", ");
-      heroLoc.textContent = region || loc.name || "Mumbai";
+      heroLoc.textContent = region || cityName;
     }
+
+    setText("vmAqiCardTitle", `${cityName} Air Quality Index`);
 
     const mainCard = document.getElementById("vmMainAqiCard");
     if (mainCard) {
@@ -170,42 +340,40 @@
     }
 
     setText("vmDataOriginBadge", data.is_live ? "Live Feed" : "Estimated");
-    setText("vmAqiStandard", `${data.aqi_standard || "NAQI"} Standard`);
-    setText("vmCardWeatherCond", weather.condition || "Clear");
-    setText(
-      "vmHeroWeatherTemp",
-      weather.temperature != null ? `${weather.temperature.toFixed(1)} ${weather.temp_unit || "°C"}` : "--"
-    );
 
+    const tempUnit = weather.temp_unit || "°C";
     renderAqiGaugeSvg("vmMainAqiGauge", data.aqi, data.aqi_standard || "NAQI", cls.category);
 
-    setText("vmCardLocation", loc.name || "Unknown");
-    setText("vmTrendCityLabel", loc.name || "your city");
-    setText("vmCardUpdated", window.VayuMain.formatDateTime(data.recorded_at));
+    setText("vmCardLocation", cityName);
+    setText("vmTrendCityLabel", cityName);
     setText("vmCardSource", data.source || "Open-Meteo Air Quality");
     setText("vmAqiMessage", cls.message || "");
 
     const charImg = document.getElementById("vmAqiCharacterImg");
+    const assets = characterAssetsForLevel(level);
     if (charImg) {
-      charImg.src = cls.illustration || "assets/images/aqi-good.svg";
-      charImg.alt = `Girl and boy reacting to ${cls.category || "current"} air quality`;
+      charImg.dataset.fallback = assets.svg;
+      charImg.src = cls.illustration || assets.jpg;
+      charImg.alt = `Two companions reacting to ${cls.category || "current"} air quality (${level})`;
     }
     setText(
       "vmAqiCharacterCaption",
       `${cls.category || "Good"} · ${cls.recommendation || cls.message || "Fresh air conditions."}`
     );
 
-    setStat("statTempVal", weather.temperature != null ? weather.temperature.toFixed(1) : "N/A", weather.temp_unit || "°C");
+    setStat("statTempVal", weather.temperature != null ? weather.temperature.toFixed(1) : "N/A", tempUnit);
     setStat("statHumVal", weather.humidity != null ? Math.round(weather.humidity) : "N/A", "%");
     setStat("statWindVal", weather.wind_speed != null ? weather.wind_speed.toFixed(1) : "N/A", "km/h");
 
+    setText("vmPollutantUnitHead", unitMode === "mgm3" ? "µg/m³ (CO mg/m³)" : "µg/m³");
+
     const pollutantSpecs = [
-      { id: "pm2_5", label: "PM2.5", max: 150, val: pollutants.pm2_5 },
-      { id: "pm10", label: "PM10", max: 250, val: pollutants.pm10 },
-      { id: "no2", label: "NO₂", max: 200, val: pollutants.no2 },
-      { id: "co", label: "CO", max: 4000, val: pollutants.co },
-      { id: "o3", label: "O₃", max: 180, val: pollutants.o3 },
-      { id: "so2", label: "SO₂", max: 200, val: pollutants.so2 },
+      { id: "pm2_5", label: "PM2.5", val: pollutants.pm2_5 },
+      { id: "pm10", label: "PM10", val: pollutants.pm10 },
+      { id: "no2", label: "NO₂", val: pollutants.no2 },
+      { id: "co", label: "CO", val: pollutants.co },
+      { id: "o3", label: "O₃", val: pollutants.o3 },
+      { id: "so2", label: "SO₂", val: pollutants.so2 },
     ];
 
     const barsEl = document.getElementById("vmHomePollutantBars");
@@ -213,15 +381,15 @@
       barsEl.innerHTML = pollutantSpecs
         .map((p) => {
           const fmt = window.VayuMain.formatPollutant(p.val, p.id, unitMode);
-          const pct = p.val != null ? Math.min(100, Math.max(5, Math.round((p.val / p.max) * 100))) : 0;
-          const barColor = pct >= 70 ? "#DC2626" : pct >= 45 ? "#EA580C" : pct >= 25 ? "#D97706" : "#16A34A";
+          const info = pollutantStatusInfo(p.id, p.val);
+          const valWithUnit = fmt.unit ? `${fmt.text} ${fmt.unit}` : fmt.text;
           return `
-            <div class="vm-pbar-row">
-              <span class="vm-pbar-name">${p.label}</span>
-              <div class="vm-pbar-track">
-                <div class="vm-pbar-fill" style="width:${pct}%; background:${barColor};"></div>
+            <div class="vm-prow">
+              <span class="vm-prow-name">${p.label}</span>
+              <div class="vm-prow-track">
+                <div class="vm-prow-fill" style="width:${info.pct}%; background:${info.color};"></div>
               </div>
-              <span class="vm-pbar-val">${window.VayuMain.escapeHtml(fmt.text)} ${window.VayuMain.escapeHtml(fmt.unit)}</span>
+              <span class="vm-prow-val">${window.VayuMain.escapeHtml(valWithUnit)}</span>
             </div>
           `;
         })
@@ -248,56 +416,43 @@
         : `<li><span class="vm-check-ico">&check;</span><span>Monitor air quality before outdoor exercise.</span></li>`;
     }
 
-    const history = data.hourly_history || [];
-    const trendEmpty = document.getElementById("vmTrendEmpty");
-    if (history.length > 0) {
-      if (trendEmpty) trendEmpty.classList.add("vm-hidden");
-      renderOrReplaceChart("vmDashboardTrendChart", {
-        type: "line",
-        data: {
-          labels: history.map((h) => window.VayuMain.formatHourLabel(h.time)),
-          datasets: [
-            {
-              label: "Hourly AQI",
-              data: history.map((h) => h.aqi),
-              borderColor: "#1b8a4b",
-              backgroundColor: "rgba(27, 138, 75, 0.14)",
-              fill: true,
-              tension: 0.35,
-              pointRadius: 3,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, title: { display: true, text: "AQI" } } },
-        },
-      });
-    } else if (trendEmpty) {
-      trendEmpty.classList.remove("vm-hidden");
-    }
-
     const alerts = data.active_alerts || [];
+    const peak = data.next_24h_peak || null;
     const alertCard = document.getElementById("vmHomeAlertStatusCard");
     const alertBadge = document.getElementById("vmHomeAlertBadge");
     if (alertCard) {
-      const hasAlert = alerts.length > 0 || (data.aqi != null && data.aqi > 150);
+      const hasHighAqi = data.aqi != null && data.aqi > 150;
+      const hasForecastRise = peak && data.aqi != null && peak.aqi >= 100 && peak.aqi >= data.aqi + 15;
+      const hasAlert = alerts.length > 0 || hasHighAqi;
       alertCard.classList.toggle("is-warning", hasAlert);
+
       if (alerts.length > 0) {
         const top = alerts[0];
-        setText("vmHomeAlertTitle", top.alert_title || "Active Pollution Alert");
-        setText("vmHomeAlertDesc", top.description || `AQI in ${loc.name || "your area"} requires precautions.`);
+        setText("vmHomeAlertTitle", top.alert_title || "Smart Alert");
+        setText("vmHomeAlertDesc", top.description || `AQI in ${cityName} requires precautions.`);
         if (alertBadge) {
           alertBadge.className = `vm-status-tag ${levelBadgeClass(top.alert_level)}`;
           alertBadge.textContent = `${alerts.length} Active`;
         }
-      } else {
-        setText("vmHomeAlertTitle", "No Alerts");
-        setText("vmHomeAlertDesc", `Air quality is ${String(cls.category || "satisfactory").toLowerCase()} in ${loc.name || "your area"}.`);
+      } else if (hasForecastRise) {
+        const peakTime = window.VayuMain.formatHourLabel(peak.time);
+        setText("vmHomeAlertTitle", "Smart Alert");
+        setText(
+          "vmHomeAlertDesc",
+          `AQI may rise to ${peak.aqi} (${peak.category}) around ${peakTime || "tonight"} in ${cityName}.`
+        );
         if (alertBadge) {
-          alertBadge.className = "vm-status-tag vm-status-good";
+          alertBadge.className = `vm-status-tag ${levelBadgeClass(peak.category)}`;
+          alertBadge.textContent = `Forecast: ${peak.category}`;
+        }
+      } else {
+        setText("vmHomeAlertTitle", "Smart Alert");
+        setText(
+          "vmHomeAlertDesc",
+          `Air quality is ${String(cls.category || "satisfactory").toLowerCase()} in ${cityName}. No sudden spikes expected.`
+        );
+        if (alertBadge) {
+          alertBadge.className = `vm-status-tag ${levelBadgeClass(cls.category)}`;
           alertBadge.textContent = "OK";
         }
       }
@@ -311,84 +466,197 @@
   }
 
   /* =========================================================
-     2. POLLUTION INTELLIGENCE CENTRE (insights.html)
+     2. INSIGHTS — 5 STACKED INTELLIGENCE CARDS (insights.html)
      ========================================================= */
   async function initInsightsPage() {
     let currentParams = window.VayuMain.getStoredLocationParams();
 
-    document.querySelectorAll(".vm-jump-pill").forEach((pill) => {
-      pill.addEventListener("click", () => {
-        document.querySelectorAll(".vm-jump-pill").forEach((p) => p.classList.remove("active"));
-        pill.classList.add("active");
+    const historyState = {
+      period: "daily",
+      time_slot: "all",
+      start_date: "",
+      end_date: "",
+      city: "",
+      metric: "avg_aqi",
+      latestData: null,
+    };
+
+    let eventReplayCtrl = null;
+
+    document.querySelectorAll(".vm-jump-tabs a[href^='#']").forEach((link) => {
+      link.addEventListener("click", () => {
+        document.querySelectorAll(".vm-jump-tabs .vm-jump-pill").forEach((el) => el.classList.remove("active"));
+        link.classList.add("active");
       });
     });
 
-    async function loadTimeMachine(params, targetDate) {
-      const tmSel = document.getElementById("tmTargetDate");
-      if (!tmSel && !document.getElementById("vmTimeMachineBarChart")) return;
-      try {
-        const tm = await window.VayuApi.getTimeMachine(
-          Object.assign({}, params || currentParams, targetDate ? { target_date: targetDate } : {})
-        );
-        const dates = (tm.available_dates || []).slice().reverse();
-        if (tmSel && dates.length) {
-          tmSel.innerHTML = dates
-            .map((d) => `<option value="${window.VayuMain.escapeHtml(d)}" ${d === tm.target_date ? "selected" : ""}>${window.VayuMain.escapeHtml(d)}</option>`)
-            .join("");
+    function renderHistoryChartsAndTable(tm) {
+      if (!tm) return;
+      historyState.latestData = tm;
+
+      const noticeEl = document.getElementById("histDataNotice");
+      if (noticeEl) {
+        if (tm.is_sample_fallback) {
+          noticeEl.className = "vm-banner vm-banner-info";
+          noticeEl.textContent = "Sample Data: Live past feed is limited right now, so sample history is shown.";
+        } else {
+          noticeEl.className = "vm-banner vm-hidden";
+          noticeEl.textContent = "";
         }
-        const series = tm.target_series || [];
-        if (series.length) {
-          renderOrReplaceChart("vmTimeMachineBarChart", {
-            type: "bar",
-            data: {
-              labels: series.map((pt) => window.VayuMain.formatHourLabel(pt.time || `2000-01-01T${pt.hour}`)),
-              datasets: [
-                {
-                  label: `Hourly AQI (${tm.target_date || ""})`,
-                  data: series.map((pt) => pt.aqi),
-                  backgroundColor: series.map((pt) => aqiColorHex(pt.aqi)),
-                  borderRadius: 6,
-                  barPercentage: 0.72,
-                },
-              ],
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: {
-                y: { beginAtZero: true, title: { display: true, text: "AQI" } },
-                x: { ticks: { maxTicksLimit: 8 } },
-              },
-            },
-          });
-        }
-      } catch (_tmErr) {}
+      }
+
+      const cityInput = document.getElementById("histCityInput");
+      if (cityInput && tm.location && !cityInput.value.trim()) {
+        cityInput.value = tm.location.name;
+      }
+
+      const startEl = document.getElementById("histStartDate");
+      const endEl = document.getElementById("histEndDate");
+      const allDates = tm.all_dates || tm.available_dates || [];
+      if (startEl && allDates.length) {
+        startEl.min = allDates[0];
+        startEl.max = allDates[allDates.length - 1];
+        if (!startEl.value) startEl.value = tm.start_date || allDates[0];
+      }
+      if (endEl && allDates.length) {
+        endEl.min = allDates[0];
+        endEl.max = allDates[allDates.length - 1];
+        if (!endEl.value) endEl.value = tm.end_date || allDates[allDates.length - 1];
+      }
+
+      const spikesEl = document.getElementById("histSpikesStrip");
+      if (spikesEl) {
+        const spikes = tm.significant_spikes || [];
+        spikesEl.innerHTML = spikes.length
+          ? spikes
+              .map((sp) => {
+                const tagCls = sp.tone === "good" ? "vm-status-good" : sp.tone === "bad" ? "vm-status-bad" : "vm-status-moderate";
+                const timeFormatted = String(sp.time || "").replace("T", " ");
+                return `
+                  <div class="vm-replay-kpi">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+                      <span class="vm-stat-label">${window.VayuMain.escapeHtml(sp.kind)}</span>
+                      <span class="vm-status-tag ${tagCls}">AQI ${sp.aqi}</span>
+                    </div>
+                    <strong class="font-mono" style="font-size:0.84rem;">${window.VayuMain.escapeHtml(timeFormatted)}</strong>
+                    <span class="vm-meta-line">${window.VayuMain.escapeHtml(sp.note || sp.category || "")}</span>
+                  </div>
+                `;
+              })
+              .join("")
+          : `<div class="vm-replay-kpi"><span class="vm-meta-line">No major spikes in this date range.</span></div>`;
+      }
+
+      renderHistoryTrendChart(tm);
+
+      const records = tm.records || [];
+      setText("histRecordsCountBadge", `${records.length} record${records.length === 1 ? "" : "s"}`);
+      const recBody = document.getElementById("histRecordsBody");
+      if (recBody) {
+        recBody.innerHTML = records.length
+          ? records
+              .slice(0, 40)
+              .map(
+                (r) => `
+                <tr>
+                  <td class="font-mono">${window.VayuMain.escapeHtml(`${r.date || ""} ${r.hour || ""}`)}</td>
+                  <td class="tabular-nums"><strong>${r.aqi}</strong></td>
+                  <td><span class="vm-status-tag ${levelBadgeClass(r.category)}">${window.VayuMain.escapeHtml(r.category || "--")}</span></td>
+                  <td class="tabular-nums">${r.pm2_5 != null ? `${r.pm2_5}` : "--"}</td>
+                  <td class="tabular-nums">${r.pm10 != null ? `${r.pm10}` : "--"}</td>
+                  <td class="tabular-nums">${r.no2 != null ? `${r.no2}` : "--"}</td>
+                  <td class="tabular-nums">${r.so2 != null ? `${r.so2}` : "--"}</td>
+                  <td class="tabular-nums">${r.o3 != null ? `${r.o3}` : "--"}</td>
+                </tr>
+              `
+              )
+              .join("")
+          : `<tr><td colspan="8">No records found for this filter.</td></tr>`;
+      }
     }
 
-    async function loadInsights(params, isInitial) {
-      currentParams = params;
-      window.VayuMain.showBanner("vmInsightsBanner", "", "info");
-      try {
-        const data = await window.VayuApi.getInsights(params);
-        window.VayuMain.updateHeaderWeather(data.current);
-        renderInsights(data);
-        await Promise.all([runSimulation(params), loadTimeMachine(params)]);
-      } catch (err) {
-        if (isInitial && (params.city || params.lat != null)) {
-          window.VayuMain.clearStoredLocation();
-          window.VayuMain.updateCityBackground("Mumbai");
-          try {
-            const fallback = await window.VayuApi.getInsights({ city: "Mumbai" });
-            currentParams = { city: "Mumbai" };
-            window.VayuMain.updateHeaderWeather(fallback.current);
-            renderInsights(fallback);
-            await Promise.all([runSimulation(currentParams), loadTimeMachine(currentParams)]);
-            window.VayuMain.showBanner("vmInsightsBanner", "VayuMitra supports locations within India only. Showing Mumbai.", "info");
-            return;
-          } catch (_e) {}
+    function renderHistoryTrendChart(tm) {
+      const trendSeries = tm.active_trend_series || [];
+      if (!trendSeries.length) return;
+      const metric = historyState.metric || "avg_aqi";
+      const metricLabels = {
+        avg_aqi: { label: "AQI", unit: "AQI" },
+        pm2_5: { label: "PM2.5", unit: "µg/m³" },
+        pm10: { label: "PM10", unit: "µg/m³" },
+        no2: { label: "NO₂", unit: "µg/m³" },
+        so2: { label: "SO₂", unit: "µg/m³" },
+        o3: { label: "O₃", unit: "µg/m³" },
+      };
+      const meta = metricLabels[metric] || metricLabels.avg_aqi;
+      const periodLabel = tm.period === "weekly" ? "Weekly" : tm.period === "monthly" ? "Monthly" : "Daily";
+
+      renderOrReplaceChart("vmTimeMachineBarChart", {
+        type: "bar",
+        data: {
+          labels: trendSeries.map((pt) => pt.label || pt.date || ""),
+          datasets: [
+            {
+              label: `${periodLabel} Avg ${meta.label}`,
+              data: trendSeries.map((pt) => pt[metric] ?? pt.avg_aqi ?? 0),
+              backgroundColor: trendSeries.map((pt) => (pt.is_spike ? "#dc2626" : aqiColorHex(pt.avg_aqi))),
+              borderRadius: 6,
+              barPercentage: 0.72,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                afterLabel(ctx) {
+                  const pt = trendSeries[ctx.dataIndex];
+                  if (!pt) return [];
+                  return [
+                    `Avg AQI: ${pt.avg_aqi} (Peak: ${pt.max_aqi})`,
+                    pt.is_spike ? "High Pollution Spike" : "Normal Range",
+                  ];
+                },
+              },
+            },
+          },
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: meta.unit } },
+            x: { ticks: { maxTicksLimit: 12 } },
+          },
+        },
+      });
+    }
+
+    async function loadHistory(params) {
+      if (!document.getElementById("ins-history")) return;
+      const noticeEl = document.getElementById("histDataNotice");
+      if (historyState.start_date && historyState.end_date && historyState.start_date > historyState.end_date) {
+        if (noticeEl) {
+          noticeEl.className = "vm-banner vm-banner-error";
+          noticeEl.textContent = "Start date must be before or equal to end date.";
         }
-        window.VayuMain.showBanner("vmInsightsBanner", err.message || "Forecast data unavailable.", "error");
+        return;
+      }
+
+      const reqParams = Object.assign({}, params || currentParams, {
+        period: historyState.period,
+        time_slot: historyState.time_slot,
+      });
+      if (historyState.city) reqParams.city = historyState.city;
+      if (historyState.start_date) reqParams.start_date = historyState.start_date;
+      if (historyState.end_date) reqParams.end_date = historyState.end_date;
+
+      try {
+        const tm = await window.VayuApi.getTimeMachine(reqParams);
+        renderHistoryChartsAndTable(tm);
+      } catch (tmErr) {
+        if (noticeEl) {
+          noticeEl.className = "vm-banner vm-banner-error";
+          noticeEl.textContent = (tmErr && tmErr.message) || "Unable to load past air quality records.";
+        }
       }
     }
 
@@ -410,48 +678,80 @@
         const sim = await window.VayuApi.simulateWhatIf(payload);
         setText("simBaseAqi", `${sim.baseline.aqi} (${sim.baseline.category})`);
         setText("simOutAqi", `${sim.simulated.aqi} (${sim.simulated.category})`);
-        setText("simOutPm25", `${sim.simulated.pm2_5} µg/m³`);
-        setText("simOutNo2", `SO2 ${sim.simulated.so2} · NO2 ${sim.simulated.no2} µg/m³`);
+        setText("simOutPm25", `PM2.5: ${sim.baseline.pm2_5} → ${sim.simulated.pm2_5} µg/m³ · NO₂: ${sim.simulated.no2}`);
         setText(
           "simResultSummary",
-          `Hypothetical delta: ${sim.simulated.aqi_delta >= 0 ? "+" : ""}${sim.simulated.aqi_delta} AQI (${sim.simulated.pct_change}%)`
+          `Estimated Delta: ${sim.simulated.aqi_delta >= 0 ? "+" : ""}${sim.simulated.aqi_delta} AQI (${sim.simulated.pct_change}%)`
         );
         setText("simImpactExplanation", sim.impact_explanation || "");
-        const assEl = document.getElementById("simAssumptionsList");
-        if (assEl) {
-          assEl.innerHTML = (sim.assumptions || []).map((a) => `<li>${window.VayuMain.escapeHtml(a)}</li>`).join("");
-        }
-        const cs = sim.comparison_chart_series;
-        if (cs && cs.labels) {
-          renderOrReplaceChart("vmSimulatorCompareChart", {
-            type: "bar",
-            data: {
-              labels: cs.labels,
-              datasets: [
-                {
-                  label: "Current Baseline",
-                  data: cs.baseline,
-                  backgroundColor: "rgba(16, 52, 59, 0.72)",
-                  borderRadius: 6,
-                },
-                {
-                  label: "Simulated Outcome",
-                  data: cs.simulated,
-                  backgroundColor: "rgba(27, 138, 75, 0.78)",
-                  borderRadius: 6,
-                },
-              ],
-            },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } },
-          });
-        }
       } catch (_err) {}
     }
 
-    const tmDateSel = document.getElementById("tmTargetDate");
-    if (tmDateSel) {
-      tmDateSel.addEventListener("change", () => {
-        if (tmDateSel.value) loadTimeMachine(currentParams, tmDateSel.value);
+    async function loadInsights(params, isInitial) {
+      currentParams = params;
+      window.VayuMain.showBanner("vmInsightsBanner", "", "info");
+      try {
+        const data = await window.VayuApi.getInsights(params);
+        window.VayuMain.updateHeaderWeather(data.current);
+        renderInsights(data);
+        if (data.current && data.current.location) {
+          historyState.city = data.current.location.name;
+          const hc = document.getElementById("histCityInput");
+          if (hc) hc.value = data.current.location.name;
+        }
+        await Promise.all([runSimulation(params), loadHistory(params)]);
+      } catch (err) {
+        if (isInitial && (params.city || params.lat != null)) {
+          window.VayuMain.clearStoredLocation();
+          window.VayuMain.updateCityBackground("Mumbai");
+          try {
+            const fallback = await window.VayuApi.getInsights({ city: "Mumbai" });
+            currentParams = { city: "Mumbai" };
+            window.VayuMain.updateHeaderWeather(fallback.current);
+            renderInsights(fallback);
+            await Promise.all([runSimulation(currentParams), loadHistory(currentParams)]);
+            window.VayuMain.showBanner("vmInsightsBanner", "VayuMitra supports locations within India only. Showing Mumbai.", "info");
+            return;
+          } catch (_e) {}
+        }
+        window.VayuMain.showBanner("vmInsightsBanner", err.message || "Forecast data unavailable.", "error");
+      }
+    }
+
+    document.querySelectorAll("[data-hist-period]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const period = btn.getAttribute("data-hist-period") || "daily";
+        historyState.period = period;
+        document.querySelectorAll("[data-hist-period]").forEach((b) => b.classList.toggle("active", b === btn));
+        loadHistory(historyState.city ? { city: historyState.city } : currentParams);
+      });
+    });
+
+    const histForm = document.getElementById("histFilterForm");
+    if (histForm) {
+      histForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        historyState.city = ((document.getElementById("histCityInput") || {}).value || "").trim();
+        historyState.start_date = (document.getElementById("histStartDate") || {}).value || "";
+        historyState.end_date = (document.getElementById("histEndDate") || {}).value || "";
+        historyState.time_slot = (document.getElementById("histTimeFilter") || {}).value || "all";
+        loadHistory(historyState.city ? { city: historyState.city } : currentParams);
+      });
+    }
+
+    const histTimeSel = document.getElementById("histTimeFilter");
+    if (histTimeSel) {
+      histTimeSel.addEventListener("change", () => {
+        historyState.time_slot = histTimeSel.value || "all";
+        loadHistory(historyState.city ? { city: historyState.city } : currentParams);
+      });
+    }
+
+    const histMetricSel = document.getElementById("histPollutantMetric");
+    if (histMetricSel) {
+      histMetricSel.addEventListener("change", () => {
+        historyState.metric = histMetricSel.value || "avg_aqi";
+        if (historyState.latestData) renderHistoryTrendChart(historyState.latestData);
       });
     }
 
@@ -467,6 +767,9 @@
         setText(vId, `${verb} ${sl.value}%`);
         sl.addEventListener("input", () => {
           setText(vId, `${verb} ${sl.value}%`);
+        });
+        sl.addEventListener("change", () => {
+          runSimulation(currentParams);
         });
       }
     });
@@ -491,11 +794,18 @@
       });
     }
 
-    const eventReplayCtrl = initEventReplay(currentParams);
+    eventReplayCtrl = initEventReplay(currentParams);
 
     window.addEventListener("vayumitra:citychange", (ev) => {
       const city = ev.detail && ev.detail.city;
       if (city) {
+        historyState.city = city;
+        historyState.start_date = "";
+        historyState.end_date = "";
+        const hs = document.getElementById("histStartDate");
+        const he = document.getElementById("histEndDate");
+        if (hs) hs.value = "";
+        if (he) he.value = "";
         loadInsights({ city }, false);
         if (eventReplayCtrl && typeof eventReplayCtrl.setCityAndDetect === "function") {
           eventReplayCtrl.setCityAndDetect(city);
@@ -517,134 +827,13 @@
     const hist = fcObj.recent_history || [];
     const rate = data.rate_analysis || {};
     const pat = data.pattern_analysis || {};
-    const fp = data.source_fingerprinting || {};
-
     setText("insLocationName", cur.location ? cur.location.name : "—");
-    setText("insCurrentAqi", cur.aqi != null ? `${cur.aqi} (${cur.classification.category})` : "—");
-    setText("insPm25", cur.pollutants && cur.pollutants.pm2_5 != null ? `${cur.pollutants.pm2_5.toFixed(1)} µg/m³` : "N/A");
-    setText("insPm10", cur.pollutants && cur.pollutants.pm10 != null ? `${cur.pollutants.pm10.toFixed(1)} µg/m³` : "N/A");
 
-    const candidates = fp.candidates || [];
     const dq = fcObj.data_quality || {};
-    const topStrength = candidates.length ? Number(candidates[0].signal_strength || 60) : 55;
-    const completeness = Number(dq.completeness_pct || 80);
-    const confPct = Math.min(95, Math.max(45, Math.round(topStrength * 0.55 + completeness * 0.4)));
-    setText("insFingerprintConfBadge", `Confidence Level: ${confPct}%`);
-
-    const fpGrid = document.getElementById("insFingerprintGrid");
-    if (fpGrid) {
-      const buckets = { traffic: 0, dust: 0, industrial: 0, others: 0 };
-      const evidences = { traffic: [], dust: [], industrial: [], others: [] };
-      candidates.forEach((c) => {
-        const name = String(c.source_name || "").toLowerCase();
-        const val = Math.max(0, Number(c.signal_strength || 0));
-        const ev = (c.evidence || []).join(" · ");
-        if (name.includes("traffic") || name.includes("vehic")) {
-          buckets.traffic += val;
-          if (ev) evidences.traffic.push(ev);
-        } else if (name.includes("construction") || name.includes("dust") || name.includes("soil")) {
-          buckets.dust += val;
-          if (ev) evidences.dust.push(ev);
-        } else if (name.includes("industrial")) {
-          buckets.industrial += val;
-          if (ev) evidences.industrial.push(ev);
-        } else {
-          buckets.others += val;
-          if (ev) evidences.others.push(ev);
-        }
-      });
-
-      const rawSum = buckets.traffic + buckets.dust + buckets.industrial + buckets.others;
-      let pctTraffic = 0;
-      let pctDust = 0;
-      let pctInd = 0;
-      let pctOthers = 0;
-      if (rawSum > 0) {
-        pctTraffic = Math.round((buckets.traffic / rawSum) * 100);
-        pctDust = Math.round((buckets.dust / rawSum) * 100);
-        pctInd = Math.round((buckets.industrial / rawSum) * 100);
-        pctOthers = Math.max(0, 100 - (pctTraffic + pctDust + pctInd));
-      }
-
-      const fpRows = [
-        {
-          label: "Traffic Emissions",
-          pct: pctTraffic,
-          color: "#16a34a",
-          evidence: evidences.traffic.join(" | ") || "Derived from live NO₂ and CO vehicle emission ratios.",
-          icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1e293b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"></path><circle cx="7" cy="17" r="2" fill="#1e293b"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2" fill="#1e293b"></circle></svg>`,
-        },
-        {
-          label: "Construction Dust",
-          pct: pctDust,
-          color: "#f59e0b",
-          evidence: evidences.dust.join(" | ") || "Derived from live PM10 coarse particulate and dust load.",
-          icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v2z" fill="#fbbf24"></path><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"></path><path d="M4 15v-3a6 6 0 0 1 6-6h0"></path><path d="M14 6h0a6 6 0 0 1 6 6v3"></path></svg>`,
-        },
-        {
-          label: "Industrial Activity",
-          pct: pctInd,
-          color: "#22a6e0",
-          evidence: evidences.industrial.join(" | ") || "Derived from live SO₂ and combustion plume indicators.",
-          icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" fill="#475569"></path><path d="M17 18h1" stroke="#fff"></path><path d="M12 18h1" stroke="#fff"></path><path d="M7 18h1" stroke="#fff"></path></svg>`,
-        },
-        {
-          label: "Others",
-          pct: pctOthers,
-          color: "#b8c2cc",
-          evidence: evidences.others.join(" | ") || "Includes biomass smoke, domestic burning, and atmospheric dispersion.",
-          icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="#ef4444" stroke="#dc2626" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>`,
-        },
-      ];
-
-      fpGrid.innerHTML = fpRows
-        .map(
-          (row) => `
-          <div class="vm-fp-row" title="${window.VayuMain.escapeHtml(row.evidence)}">
-            <span class="vm-fp-ico" aria-hidden="true">${row.icon}</span>
-            <span class="vm-fp-label">${row.label}</span>
-            <div class="vm-fp-track">
-              <div class="vm-fp-fill" style="width:${row.pct}%; background:${row.color};"></div>
-            </div>
-            <span class="vm-fp-pct">${row.pct}%</span>
-          </div>
-        `
-        )
-        .join("");
-    }
-
-    const cmpBody = document.getElementById("insSourceCompareBody");
-    if (cmpBody) {
-      const rows = fp.historical_comparison || [];
-      cmpBody.innerHTML = rows.length
-        ? rows
-            .map((r) => {
-              const deltaText = r.delta_pct != null ? `${r.delta_pct >= 0 ? "+" : ""}${r.delta_pct}%` : "—";
-              const sigCls =
-                r.status === "Above Average"
-                  ? "vm-status-bad"
-                  : r.status === "Below Average"
-                  ? "vm-status-good"
-                  : "vm-status-satisfactory";
-              return `
-                <tr>
-                  <td><strong>${window.VayuMain.escapeHtml(r.pollutant)}</strong></td>
-                  <td class="tabular-nums">${r.current != null ? `${r.current} ${r.unit}` : "N/A"}</td>
-                  <td class="tabular-nums">${r.avg_24h != null ? `${r.avg_24h} ${r.unit}` : "N/A"}</td>
-                  <td class="tabular-nums">${r.avg_multiday != null ? `${r.avg_multiday} ${r.unit}` : "N/A"}</td>
-                  <td class="tabular-nums">${window.VayuMain.escapeHtml(deltaText)}</td>
-                  <td><span class="vm-status-tag ${sigCls}">${window.VayuMain.escapeHtml(r.status)}</span></td>
-                </tr>
-              `;
-            })
-            .join("")
-        : `<tr><td colspan="6">Historical baseline comparison unavailable.</td></tr>`;
-    }
-
     setText("insRateStatus", rate.status || "Unavailable");
     setText("insRateSummary", rate.summary || "");
-    setText("insForecastQuality", dq.quality_badge ? `${dq.quality_badge} (${dq.completeness_pct}% 24h coverage)` : "Regional Grid");
-    setText("insForecastPeriod", fcObj.forecast_period || "Next 24h & 3-Day Outlook");
+    setText("insForecastQuality", dq.quality_badge ? `${dq.quality_badge} (${dq.completeness_pct}% coverage)` : "Live Data");
+    setText("insForecastPeriod", fcObj.forecast_period || "Next 24 Hours Forecast & 3-Day Outlook");
 
     const expPt = pat.peak_forecast || (fc.length ? fc[0] : null);
     setText("insExpectedAqiVal", expPt && expPt.aqi != null ? String(expPt.aqi) : "--");
@@ -655,75 +844,8 @@
       expBadge.textContent = cat;
     }
 
-    const dailyGrid = document.getElementById("insDailyForecastGrid");
-    if (dailyGrid) {
-      const dList = fcObj.daily_forecast || [];
-      dailyGrid.innerHTML = dList
-        .map(
-          (d) => `
-          <div class="vm-twin-item-row">
-            <div>
-              <strong class="font-mono">${window.VayuMain.escapeHtml(d.date)}</strong>
-              <div class="vm-meta-line">Range: ${d.min_aqi}–${d.max_aqi} AQI (${d.hours}h)</div>
-            </div>
-            <span class="vm-status-tag ${levelBadgeClass(d.category)}">Avg ${d.avg_aqi} · ${window.VayuMain.escapeHtml(d.category)}</span>
-          </div>
-        `
-        )
-        .join("");
-    }
-
-    const insWinGrid = document.getElementById("vmInsightsWindowsGrid");
-    if (insWinGrid) {
-      const windows = data.clean_air_windows || [];
-      insWinGrid.innerHTML = windows.length
-        ? windows
-            .map((w) => {
-              const stCls = w.status === "Avoid" ? "vm-status-worse" : w.status === "Caution" ? "vm-status-moderate" : "vm-status-good";
-              return `
-                <article class="vm-card">
-                  <div class="vm-aqi-header-row" style="margin-bottom:6px;">
-                    <span class="vm-stat-label">${window.VayuMain.escapeHtml(w.label)}</span>
-                    <span class="vm-status-tag ${stCls}">${window.VayuMain.escapeHtml(w.status)}</span>
-                  </div>
-                  <div class="vm-stat-value tabular-nums" style="font-size:1.25rem;">${window.VayuMain.formatHourLabel(w.time)} · AQI ${w.aqi}</div>
-                  <div class="vm-meta-line" style="margin-top:4px;">${window.VayuMain.escapeHtml(w.expected_change || w.category)}</div>
-                  <p class="vm-section-subtitle" style="margin-top:6px;">${window.VayuMain.escapeHtml(w.guidance)}</p>
-                  ${w.precaution ? `<p class="vm-meta-line" style="margin-top:6px;"><strong>Precaution:</strong> ${window.VayuMain.escapeHtml(w.precaution)}</p>` : ""}
-                </article>
-              `;
-            })
-            .join("")
-        : `<article class="vm-card">24-hour clean-air window predictions unavailable right now.</article>`;
-    }
-
-    setText(
-      "insPeakWindow",
-      pat.peak_forecast
-        ? `${window.VayuMain.formatHourLabel(pat.peak_forecast.time)} · AQI ${pat.peak_forecast.aqi} (${pat.peak_forecast.confidence_low}–${pat.peak_forecast.confidence_high})`
-        : "Unavailable"
-    );
-    setText(
-      "insCleanWindow",
-      pat.cleanest_forecast ? `${window.VayuMain.formatHourLabel(pat.cleanest_forecast.time)} · AQI ${pat.cleanest_forecast.aqi}` : "Unavailable"
-    );
-    setText(
-      "insDayNightAvg",
-      pat.daytime_avg_aqi != null && pat.nighttime_avg_aqi != null
-        ? `Day ${pat.daytime_avg_aqi} · Night ${pat.nighttime_avg_aqi}`
-        : "Insufficient history"
-    );
-
-    const obsEl = document.getElementById("insObservationsList");
-    if (obsEl) {
-      const obs = pat.observations || [];
-      obsEl.innerHTML = obs.length
-        ? obs.map((o) => `<li>${window.VayuMain.escapeHtml(o)}</li>`).join("")
-        : "<li>No pattern observations available for this location yet.</li>";
-    }
-
     if (!fcObj.available || fc.length === 0) {
-      window.VayuMain.showBanner("vmInsightsBanner", "24-hour forecast data is currently unavailable from the upstream provider.", "info");
+      window.VayuMain.showBanner("vmInsightsBanner", "24-hour forecast data is unavailable right now.", "info");
       return;
     }
 
@@ -792,7 +914,7 @@
   }
 
   /* =========================================================
-     2B. POLLUTION EVENT REPLAY (insights.html)
+     2B. POLLUTION EVENT REPLAY (Community Cases + Simple Explanation, No Map)
      ========================================================= */
   function initEventReplay(initialParams) {
     const section = document.getElementById("ins-event-replay");
@@ -804,24 +926,33 @@
     const startInput = document.getElementById("erStartDate");
     const endInput = document.getElementById("erEndDate");
     const pollutantSel = document.getElementById("erPollutantSelect");
-    const thresholdSel = document.getElementById("erThresholdSelect");
     const detectBtn = document.getElementById("erDetectBtn");
     const detectedWrap = document.getElementById("erDetectedWrap");
-    const eventsListEl = document.getElementById("erEventsList");
+    const caseSelectEl = document.getElementById("erCaseSelect");
     const workspaceEl = document.getElementById("erReplayWorkspace");
-    const explainBtn = document.getElementById("erExplainBtn");
-    const downloadPdfBtn = document.getElementById("erDownloadPdfBtn");
+    const prevStepBtn = document.getElementById("erStepPrevBtn");
+    const playPauseBtn = document.getElementById("erPlayPauseBtn");
+    const nextStepBtn = document.getElementById("erStepNextBtn");
+    const replayScrubber = document.getElementById("erReplayScrubber");
+    const stepStateBadge = document.getElementById("erStepStateBadge");
+    const statusBadge = document.getElementById("erStatusBadge");
 
-    let replayMap = null;
-    let replayMarkersLayer = null;
+    let replayTimer = null;
+    let pendingTargetEventId = null;
+    let pendingTargetCaseId = null;
     let replayState = {
       dataset: null,
       selectedEvent: null,
-      selectedReportId: null,
-      aiExplanation: "",
-      aiError: "",
-      explainSeq: 0,
+      activeStepIdx: 0,
     };
+
+    function stopPlayback() {
+      if (replayTimer) {
+        clearInterval(replayTimer);
+        replayTimer = null;
+      }
+      if (playPauseBtn) playPauseBtn.textContent = "Play";
+    }
 
     function toYmdLocal(d) {
       const yr = d.getFullYear();
@@ -843,7 +974,6 @@
       });
     }
 
-    // Default date range: last 7 days
     const today = new Date();
     const weekAgo = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
     const todayStr = toYmdLocal(today);
@@ -864,35 +994,69 @@
       if (!datalist) return;
       try {
         const dir = await window.VayuApi.getIndiaLocations();
-        const states = dir.states || [];
         const names = [];
-        states.forEach((st) => {
+        (dir.states || []).forEach((st) => {
           (st.cities || []).forEach((c) => {
             if (c && c.name) names.push(c.name);
           });
         });
-        const unique = Array.from(new Set(names)).sort();
-        datalist.innerHTML = unique
+        datalist.innerHTML = Array.from(new Set(names))
+          .sort()
           .map((n) => `<option value="${window.VayuMain.escapeHtml(n)}"></option>`)
           .join("");
       } catch (_err) {}
     }
 
+    function simpleStateWord(state) {
+      if (state === "Peak") return "Highest Level";
+      if (state === "Increasing") return "Going Up";
+      if (state === "Decreasing") return "Going Down";
+      return "Steady";
+    }
+
     function updatePointInspector(pt, dataset) {
       const box = document.getElementById("erPointInspector");
       if (!box || !pt || !dataset) return;
-      const phaseLabel = pt.is_peak
-        ? "Peak Hour"
-        : pt.phase === "during"
-        ? "During Event"
-        : pt.phase === "before"
-        ? "Before Spike"
-        : "After Spike";
+      const stateWord = simpleStateWord(pt.progression_state);
       const wx = pt.weather || {};
-      const wxText = wx.available
-        ? `Wind: ${wx.wind_speed != null ? `${wx.wind_speed} km/h` : "N/A"} ${wx.wind_direction_compass || ""} (${wx.wind_direction_deg != null ? `${wx.wind_direction_deg}°` : "N/A"}) · Temp: ${wx.temperature_c != null ? `${wx.temperature_c}°C` : "N/A"} · Humidity: ${wx.humidity != null ? `${wx.humidity}%` : "N/A"}`
-        : "Historical weather unavailable for this hour";
-      box.innerHTML = `<strong>${window.VayuMain.escapeHtml(formatShortTime(pt.time))} (${window.VayuMain.escapeHtml(phaseLabel)})</strong> &middot; ${window.VayuMain.escapeHtml(dataset.pollutant_label)}: <strong>${pt.value} ${window.VayuMain.escapeHtml(dataset.unit)}</strong> &middot; ${window.VayuMain.escapeHtml(wxText)}`;
+      const windPart = wx.available && wx.wind_speed != null ? ` · Wind: ${wx.wind_speed} km/h` : "";
+      const aligned = Array.isArray(pt.aligned_reports) ? pt.aligned_reports : [];
+      const repPart = aligned.length ? ` · Citizen report logged (${aligned[0].category})` : "";
+      box.innerHTML =
+        `<strong>${window.VayuMain.escapeHtml(formatShortTime(pt.time))}</strong> &middot; ` +
+        `${window.VayuMain.escapeHtml(dataset.pollutant_label)}: <strong>${pt.value} ${window.VayuMain.escapeHtml(dataset.unit)}</strong> ` +
+        `(${window.VayuMain.escapeHtml(stateWord)})${window.VayuMain.escapeHtml(windPart)}` +
+        (repPart ? `<span style="color:#0f766e; font-weight:700;">${window.VayuMain.escapeHtml(repPart)}</span>` : "");
+    }
+
+    function applyReplayStep(idx) {
+      const ev = replayState.selectedEvent;
+      const ds = replayState.dataset;
+      if (!ev || !ds || !Array.isArray(ev.timeline) || !ev.timeline.length) return;
+      const clamped = Math.max(0, Math.min(ev.timeline.length - 1, idx));
+      replayState.activeStepIdx = clamped;
+      const pt = ev.timeline[clamped];
+
+      if (replayScrubber) {
+        replayScrubber.max = String(ev.timeline.length - 1);
+        replayScrubber.value = String(clamped);
+      }
+      if (stepStateBadge) {
+        const st = pt.progression_state || "Steady";
+        const cls = st === "Peak" ? "vm-status-bad" : st === "Increasing" ? "vm-status-moderate" : st === "Decreasing" ? "vm-status-good" : "vm-status-satisfactory";
+        stepStateBadge.className = `vm-status-tag ${cls}`;
+        stepStateBadge.textContent = `${simpleStateWord(st)}`;
+      }
+      updatePointInspector(pt, ds);
+
+      const chart = chartRegistry.vmEventReplayChart;
+      if (chart && chart.data && chart.data.datasets && chart.data.datasets[0]) {
+        const mainDs = chart.data.datasets[0];
+        mainDs.pointRadius = ev.timeline.map((p, i) => (i === clamped ? 8.5 : p.is_peak ? 6 : 3.5));
+        mainDs.pointBorderColor = ev.timeline.map((_, i) => (i === clamped ? "#10343b" : "#ffffff"));
+        mainDs.pointBorderWidth = ev.timeline.map((_, i) => (i === clamped ? 3 : 1.5));
+        chart.update("none");
+      }
     }
 
     function renderEventTimelineChart(ev, dataset) {
@@ -900,586 +1064,379 @@
       const labels = timeline.map((pt) => formatShortTime(pt.time));
       const values = timeline.map((pt) => pt.value);
       const baselineArr = timeline.map(() => ev.baseline_value);
-      const thresholdArr = timeline.map(() => ev.threshold_value);
+      const reportOverlayArr = timeline.map((pt) =>
+        Array.isArray(pt.aligned_reports) && pt.aligned_reports.length ? pt.value : null
+      );
 
-      const duringStartIdx = timeline.findIndex((pt) => pt.phase === "during");
-      let duringEndIdx = -1;
-      for (let i = timeline.length - 1; i >= 0; i--) {
-        if (timeline[i].phase === "during") {
-          duringEndIdx = i;
-          break;
-        }
-      }
-
-      const eventBandPlugin = {
-        id: "vmEventHighlightBand",
-        beforeDatasetsDraw(chart) {
-          if (duringStartIdx < 0 || duringEndIdx < 0) return;
-          const xScale = chart.scales.x;
-          const chartArea = chart.chartArea;
-          if (!xScale || !chartArea) return;
-          const x1 = xScale.getPixelForValue(duringStartIdx);
-          const x2 = xScale.getPixelForValue(duringEndIdx);
-          const pad = duringStartIdx === duringEndIdx ? 14 : 8;
-          const left = Math.max(chartArea.left, x1 - pad);
-          const right = Math.min(chartArea.right, x2 + pad);
-          const ctx = chart.ctx;
-          ctx.save();
-          ctx.fillStyle = "rgba(234, 88, 12, 0.12)";
-          ctx.fillRect(left, chartArea.top, Math.max(6, right - left), chartArea.bottom - chartArea.top);
-          ctx.restore();
+      const datasets = [
+        {
+          label: `${dataset.pollutant_label} (${dataset.unit})`,
+          data: values,
+          borderColor: "#0f766e",
+          backgroundColor: "rgba(15, 118, 110, 0.12)",
+          fill: true,
+          tension: 0.28,
+          pointBackgroundColor: timeline.map((pt) => (pt.is_peak ? "#dc2626" : pt.phase === "during" ? "#ea580c" : "#0f766e")),
+          pointBorderColor: "#ffffff",
+          pointBorderWidth: 1.5,
+          pointRadius: timeline.map((pt) => (pt.is_peak ? 6 : 3.5)),
         },
-      };
+        {
+          label: `Normal Level (${ev.baseline_value} ${dataset.unit})`,
+          data: baselineArr,
+          borderColor: "#16a34a",
+          borderDash: [4, 4],
+          pointRadius: 0,
+          borderWidth: 1.5,
+          fill: false,
+        },
+      ];
 
-      const pointColors = timeline.map((pt) => {
-        if (pt.is_peak) return "#dc2626";
-        if (pt.phase === "during") return "#ea580c";
-        return "#0f766e";
-      });
-      const pointRadii = timeline.map((pt) => (pt.is_peak ? 7 : pt.phase === "during" ? 4.5 : 3.5));
+      if (reportOverlayArr.some((v) => v !== null)) {
+        datasets.push({
+          label: "Community Case Marker",
+          data: reportOverlayArr,
+          borderColor: "#7c3aed",
+          backgroundColor: "#7c3aed",
+          pointStyle: "rectRot",
+          pointRadius: 8,
+          showLine: false,
+        });
+      }
 
       renderOrReplaceChart("vmEventReplayChart", {
         type: "line",
-        data: {
-          labels,
-          datasets: [
-            {
-              label: `${dataset.pollutant_label} (${dataset.unit})`,
-              data: values,
-              borderColor: "#0f766e",
-              backgroundColor: "rgba(15, 118, 110, 0.12)",
-              fill: true,
-              tension: 0.28,
-              pointBackgroundColor: pointColors,
-              pointBorderColor: "#ffffff",
-              pointBorderWidth: 1.5,
-              pointRadius: pointRadii,
-              pointHoverRadius: 8,
-            },
-            {
-              label: `Spike Threshold (${ev.threshold_value} ${dataset.unit})`,
-              data: thresholdArr,
-              borderColor: "#ea580c",
-              borderDash: [5, 5],
-              pointRadius: 0,
-              borderWidth: 1.5,
-              fill: false,
-            },
-            {
-              label: `Baseline (${ev.baseline_value} ${dataset.unit})`,
-              data: baselineArr,
-              borderColor: "#16a34a",
-              borderDash: [3, 4],
-              pointRadius: 0,
-              borderWidth: 1.5,
-              fill: false,
-            },
-          ],
-        },
-        plugins: [eventBandPlugin],
+        data: { labels, datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
-          onHover(_evt, elements) {
-            if (elements && elements.length > 0) {
-              const idx = elements[0].index;
-              if (timeline[idx]) updatePointInspector(timeline[idx], dataset);
-            }
-          },
           onClick(_evt, elements) {
             if (elements && elements.length > 0) {
-              const idx = elements[0].index;
-              if (timeline[idx]) updatePointInspector(timeline[idx], dataset);
+              stopPlayback();
+              applyReplayStep(elements[0].index);
             }
           },
-          plugins: {
-            tooltip: {
-              callbacks: {
-                afterBody(items) {
-                  if (!items || !items.length) return [];
-                  const pt = timeline[items[0].dataIndex];
-                  if (!pt) return [];
-                  const wx = pt.weather || {};
-                  if (!wx.available) return ["Historical weather: Unavailable"];
-                  return [
-                    `Wind: ${wx.wind_speed != null ? `${wx.wind_speed} km/h` : "N/A"} ${wx.wind_direction_compass || ""}`,
-                    `Temp: ${wx.temperature_c != null ? `${wx.temperature_c}°C` : "N/A"} · Humidity: ${wx.humidity != null ? `${wx.humidity}%` : "N/A"}`,
-                  ];
-                },
-              },
-            },
-          },
           scales: {
-            x: {
-              title: { display: true, text: "Date & Time (Local)" },
-              ticks: { maxTicksLimit: 9 },
-            },
-            y: {
-              beginAtZero: true,
-              title: { display: true, text: `${dataset.pollutant_label} (${dataset.unit})` },
-            },
+            x: { ticks: { maxTicksLimit: 7 } },
+            y: { beginAtZero: true, title: { display: true, text: dataset.unit } },
           },
         },
       });
 
-      const peakPt = timeline.find((pt) => pt.is_peak) || timeline[0];
-      if (peakPt) updatePointInspector(peakPt, dataset);
+      const peakIdx = timeline.findIndex((pt) => pt.is_peak);
+      applyReplayStep(peakIdx >= 0 ? peakIdx : 0);
     }
 
-    function renderWeatherCorrelation(ev) {
-      const ws = ev.weather_summary || {};
-      const unavailBox = document.getElementById("erWeatherUnavailableBox");
-      const contentBox = document.getElementById("erWeatherContent");
-      const statusTag = document.getElementById("erWeatherStatusTag");
-      const noteEl = document.getElementById("erWeatherAvailabilityNote");
-
-      if (!ws.available) {
-        if (unavailBox) unavailBox.classList.remove("vm-hidden");
-        if (contentBox) contentBox.classList.add("vm-hidden");
-        if (statusTag) {
-          statusTag.className = "vm-status-tag vm-status-moderate";
-          statusTag.textContent = "Unavailable";
-        }
-        if (noteEl) noteEl.textContent = ws.note || "Historical weather unavailable.";
-        return;
-      }
-
-      if (unavailBox) unavailBox.classList.add("vm-hidden");
-      if (contentBox) contentBox.classList.remove("vm-hidden");
-      if (statusTag) {
-        statusTag.className = "vm-status-tag vm-status-good";
-        statusTag.textContent = "Historical Archive";
-      }
-      if (noteEl) noteEl.textContent = ws.note || "Aligned historical weather observations.";
-
-      setText("erWxWindSpeed", ws.wind_speed_avg != null ? `${ws.wind_speed_avg} km/h avg` : "Unavailable");
-      setText(
-        "erWxWindMeta",
-        ws.wind_speed_min != null ? `Range: ${ws.wind_speed_min}–${ws.wind_speed_max} km/h · Low-wind hrs: ${ws.low_wind_hours || 0}` : "No wind speed data"
-      );
-      setText(
-        "erWxWindDir",
-        ws.prevailing_wind_compass ? `${ws.prevailing_wind_compass} (${ws.prevailing_wind_deg}°)` : "Unavailable"
-      );
-      setText("erWxWindDirMeta", "Prevailing vector direction during event");
-      setText("erWxTemp", ws.temp_avg_c != null ? `${ws.temp_avg_c}°C avg` : "Unavailable");
-      setText("erWxTempMeta", ws.temp_min_c != null ? `Range: ${ws.temp_min_c}–${ws.temp_max_c}°C` : "No temperature data");
-      setText("erWxHumidity", ws.humidity_avg != null ? `${ws.humidity_avg}% avg` : "Unavailable");
-      setText("erWxHumidityMeta", ws.humidity_min != null ? `Range: ${ws.humidity_min}–${ws.humidity_max}%` : "Humidity unavailable");
-
-      const timeline = ev.timeline || [];
-      renderOrReplaceChart("vmEventWeatherChart", {
-        type: "line",
-        data: {
-          labels: timeline.map((pt) => formatShortTime(pt.time)),
-          datasets: [
-            {
-              label: "Wind Speed (km/h)",
-              data: timeline.map((pt) => (pt.weather && pt.weather.available ? pt.weather.wind_speed : null)),
-              borderColor: "#0284c7",
-              backgroundColor: "rgba(2, 132, 199, 0.12)",
-              yAxisID: "y",
-              tension: 0.3,
-              pointRadius: 2.5,
-            },
-            {
-              label: "Temperature (°C)",
-              data: timeline.map((pt) => (pt.weather && pt.weather.available ? pt.weather.temperature_c : null)),
-              borderColor: "#d97706",
-              yAxisID: "y1",
-              tension: 0.3,
-              pointRadius: 2.5,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
-          scales: {
-            x: { ticks: { maxTicksLimit: 6 } },
-            y: { type: "linear", position: "left", beginAtZero: true, title: { display: true, text: "Wind (km/h)" } },
-            y1: { type: "linear", position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: "Temp (°C)" } },
-          },
-        },
-      });
-    }
-
-    function showReportDetail(rep) {
-      const detailBox = document.getElementById("erReportDetailBox");
-      if (!detailBox || !rep) return;
-      replayState.selectedReportId = rep.id;
-      document.querySelectorAll("#erReportsList .vm-replay-report-item").forEach((btn) => {
-        btn.classList.toggle("active", Number(btn.getAttribute("data-report-id")) === rep.id);
-      });
-      const verCls = rep.is_verified ? "vm-status-good" : "vm-status-moderate";
-      detailBox.classList.remove("vm-hidden");
-      detailBox.innerHTML = `
-        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
-          <strong>${window.VayuMain.escapeHtml(rep.report_code || "Report")} &middot; ${window.VayuMain.escapeHtml(rep.title)}</strong>
-          <span class="vm-status-tag ${verCls}">${window.VayuMain.escapeHtml(rep.verification_label || rep.status)}</span>
-        </div>
-        <div class="vm-meta-line" style="margin-bottom:6px;">
-          Category: <strong>${window.VayuMain.escapeHtml(rep.category)}</strong> &middot;
-          Location: <strong>${window.VayuMain.escapeHtml(rep.location_name)}</strong> &middot;
-          Reported: <strong>${window.VayuMain.escapeHtml(window.VayuMain.formatDateTime(rep.created_at))}</strong>
-        </div>
-        <p style="margin:0;">${window.VayuMain.escapeHtml(rep.description)}</p>
-        ${rep.match_note ? `<div class="vm-meta-line" style="margin-top:6px;">${window.VayuMain.escapeHtml(rep.match_note)}</div>` : ""}
-      `;
-    }
-
-    function renderCommunityReports(ev, location) {
+    function renderSelectedCaseAndExplanation(ev, dataset) {
       const reports = ev.community_reports || [];
-      const emptyBox = document.getElementById("erReportsEmptyBox");
-      const contentBox = document.getElementById("erReportsContent");
-      const listEl = document.getElementById("erReportsList");
-      const detailBox = document.getElementById("erReportDetailBox");
-      const countTag = document.getElementById("erReportsCountTag");
-
-      if (countTag) {
-        countTag.textContent = `${reports.length} Matched`;
-        countTag.className = `vm-status-tag ${reports.length ? "vm-status-good" : "vm-status-satisfactory"}`;
-      }
-
-      if (!reports.length) {
-        if (emptyBox) emptyBox.classList.remove("vm-hidden");
-        if (contentBox) contentBox.classList.add("vm-hidden");
-        if (detailBox) detailBox.classList.add("vm-hidden");
-        return;
-      }
-
-      if (emptyBox) emptyBox.classList.add("vm-hidden");
-      if (contentBox) contentBox.classList.remove("vm-hidden");
-
-      if (listEl) {
-        listEl.innerHTML = reports
-          .map((r) => {
-            const verCls = r.is_verified ? "vm-status-good" : "vm-status-moderate";
-            return `
-              <button type="button" class="vm-replay-report-item" data-report-id="${r.id}">
-                <div style="display:flex; justify-content:space-between; gap:8px; align-items:center; width:100%;">
-                  <strong style="font-size:0.88rem;">${window.VayuMain.escapeHtml(r.category)} &middot; ${window.VayuMain.escapeHtml(r.location_name)}</strong>
-                  <span class="vm-status-tag ${verCls}">${window.VayuMain.escapeHtml(r.status)}</span>
+      const primaryCase = ev.case_report || reports[0] || null;
+      const caseBox = document.getElementById("erSelectedCaseCard");
+      if (caseBox) {
+        if (primaryCase) {
+          const isSample = Boolean(primaryCase.photo_url && String(primaryCase.photo_url).includes("/uploads/sample-"));
+          const photoHtml = primaryCase.photo_url
+            ? `<img src="${window.VayuMain.escapeHtml(primaryCase.photo_url)}" alt="${window.VayuMain.escapeHtml(primaryCase.title)}" class="vm-er-case-photo" />`
+            : "";
+          caseBox.classList.remove("vm-hidden");
+          caseBox.innerHTML = `
+            ${photoHtml}
+            <div style="min-width:0; flex:1;">
+              <div style="display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap;">
+                <strong style="font-size:0.95rem; color:var(--vm-teal-deep);">${window.VayuMain.escapeHtml(primaryCase.title)}</strong>
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                  <span class="vm-status-tag vm-status-moderate">${window.VayuMain.escapeHtml(primaryCase.category)}</span>
+                  <span class="vm-status-tag ${levelBadgeClass(primaryCase.status)}">${window.VayuMain.escapeHtml(primaryCase.status)}</span>
                 </div>
-                <div class="vm-meta-line">${window.VayuMain.escapeHtml(window.VayuMain.formatDateTime(r.created_at))}${r.distance_km != null ? ` · ${r.distance_km} km away` : ""}</div>
-              </button>
-            `;
-          })
-          .join("");
-
-        listEl.querySelectorAll(".vm-replay-report-item").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const rid = Number(btn.getAttribute("data-report-id"));
-            const found = reports.find((x) => x.id === rid);
-            if (found) showReportDetail(found);
-          });
-        });
-      }
-
-      // Render interactive Leaflet markers if Leaflet is loaded
-      const mapEl = document.getElementById("erReportsMap");
-      if (mapEl && typeof window.L !== "undefined" && location) {
-        if (!replayMap) {
-          replayMap = window.L.map(mapEl, { scrollWheelZoom: false }).setView([location.latitude, location.longitude], 11);
-          window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            maxZoom: 18,
-            attribution: "&copy; OpenStreetMap",
-          }).addTo(replayMap);
-          replayMarkersLayer = window.L.layerGroup().addTo(replayMap);
+              </div>
+              <div class="vm-meta-line" style="margin-top:4px;">
+                ${window.VayuMain.escapeHtml(primaryCase.location_name)} &middot; ${window.VayuMain.escapeHtml(window.VayuMain.formatDateTime(primaryCase.created_at))}${isSample ? " &middot; Sample photo" : ""}
+              </div>
+              <p style="margin:6px 0 0; font-size:0.85rem; color:var(--vm-teal-mid); line-height:1.42;">${window.VayuMain.escapeHtml(primaryCase.description)}</p>
+            </div>
+          `;
         } else {
-          replayMarkersLayer.clearLayers();
-          replayMap.setView([location.latitude, location.longitude], 11);
+          caseBox.classList.add("vm-hidden");
+          caseBox.innerHTML = "";
         }
-
-        const bounds = [[location.latitude, location.longitude]];
-        window.L.circleMarker([location.latitude, location.longitude], {
-          radius: 7,
-          color: "#0f766e",
-          fillColor: "#14b8a6",
-          fillOpacity: 0.9,
-        })
-          .bindPopup(`<strong>${window.VayuMain.escapeHtml(location.name)}</strong><br/>Analysis Center`)
-          .addTo(replayMarkersLayer);
-
-        reports.forEach((rep) => {
-          if (rep.latitude == null || rep.longitude == null) return;
-          bounds.push([rep.latitude, rep.longitude]);
-          const marker = window.L.circleMarker([rep.latitude, rep.longitude], {
-            radius: 8,
-            color: rep.is_verified ? "#15803d" : "#d97706",
-            fillColor: rep.is_verified ? "#22c55e" : "#f59e0b",
-            fillOpacity: 0.92,
-            weight: 2,
-          })
-            .bindPopup(
-              `<strong>${window.VayuMain.escapeHtml(rep.report_code)}</strong><br/>${window.VayuMain.escapeHtml(rep.category)}<br/>${window.VayuMain.escapeHtml(rep.location_name)}<br/><em>${window.VayuMain.escapeHtml(rep.status)}</em>`
-            )
-            .addTo(replayMarkersLayer);
-          marker.on("click", () => showReportDetail(rep));
-        });
-
-        setTimeout(() => {
-          if (replayMap) {
-            replayMap.invalidateSize();
-            if (bounds.length > 1) {
-              replayMap.fitBounds(bounds, { padding: [26, 26], maxZoom: 13 });
-            }
-          }
-        }, 120);
       }
 
-      showReportDetail(reports[0]);
-    }
-
-    function renderEventSummary(ev, dataset) {
-      const grid = document.getElementById("erSummaryGrid");
-      if (!grid || !ev || !dataset) return;
-      const ws = ev.weather_summary || {};
-      const reports = ev.community_reports || [];
-      const ds = dataset.data_sources || {};
-
-      const weatherSummaryStr = ws.available
-        ? `Wind ${ws.wind_speed_avg ?? "N/A"} km/h (${ws.prevailing_wind_compass || "--"}), Temp ${ws.temp_avg_c ?? "N/A"}°C, Humidity ${ws.humidity_avg ?? "N/A"}%`
-        : "Historical weather data unavailable";
-      const reportsSummaryStr = reports.length
-        ? `${reports.length} report(s): ${reports.map((r) => `${r.report_code} (${r.category})`).join(", ")}`
-        : "No matching community reports found for this event.";
-      const aiSummaryStr = replayState.aiExplanation
-        ? replayState.aiExplanation
-        : replayState.aiError
-        ? `AI explanation unavailable (${replayState.aiError})`
-        : "Generating explanation...";
-      const sourcesStr = `Air Quality: ${ds.air_quality || "Open-Meteo"} · Weather: ${
-        Array.isArray(ds.weather) ? ds.weather.join(", ") : ds.weather || "Unavailable"
-      } · Reports: ${ds.community || "VayuMitra SQLite"}`;
-
-      const cells = [
-        { label: "Selected City", val: dataset.location.name },
-        { label: "Pollutant", val: `${dataset.pollutant_label} (${dataset.unit})` },
-        { label: "Event Date", val: ev.event_date },
-        { label: "Start Time", val: formatShortTime(ev.start_time) },
-        { label: "Peak Time", val: formatShortTime(ev.peak_time) },
-        { label: "End Time", val: formatShortTime(ev.end_time) },
-        { label: "Baseline Concentration", val: `${ev.baseline_value} ${dataset.unit}` },
-        { label: "Peak Concentration", val: `${ev.peak_value} ${dataset.unit} (+${ev.pct_above_baseline}%)` },
-        { label: "Event Duration", val: `${ev.duration_hours} hour(s)` },
-        { label: "Historical Weather Conditions", val: weatherSummaryStr, wide: true },
-        { label: "Matching Community Reports", val: reportsSummaryStr, wide: true },
-        { label: "AI-Generated Explanation", val: aiSummaryStr, wide: true },
-        { label: "Data Sources & Availability", val: sourcesStr, wide: true },
-      ];
-
-      grid.innerHTML = cells
-        .map(
-          (c) => `
-          <div class="vm-replay-summary-cell ${c.wide ? "is-wide" : ""}">
-            <span class="vm-stat-label">${window.VayuMain.escapeHtml(c.label)}</span>
-            <strong>${window.VayuMain.escapeHtml(c.val)}</strong>
-          </div>
-        `
-        )
-        .join("");
-    }
-
-    async function fetchAiExplanation(ev, dataset) {
-      const aiBox = document.getElementById("erAiExplanationBox");
-      if (!aiBox || !ev || !dataset) return;
-      const mySeq = ++replayState.explainSeq;
-      replayState.aiExplanation = "";
-      replayState.aiError = "";
-      aiBox.className = "vm-replay-ai-box";
-      aiBox.textContent = "Generating evidence-grounded explanation from pollution, historical weather, and Air Guardian records...";
-      renderEventSummary(ev, dataset);
-
-      try {
-        const res = await window.VayuApi.explainEventReplay({
-          city: dataset.location.name,
-          pollutant_label: dataset.pollutant_label,
-          unit: dataset.unit,
-          event: ev,
-        });
-        if (mySeq !== replayState.explainSeq) return;
-        replayState.aiExplanation = res.explanation || "";
-        aiBox.className = "vm-replay-ai-box";
-        aiBox.textContent = replayState.aiExplanation;
-      } catch (err) {
-        if (mySeq !== replayState.explainSeq) return;
-        replayState.aiError = err.message || "AI explanation service unavailable.";
-        aiBox.className = "vm-replay-ai-box is-error";
-        aiBox.textContent = replayState.aiError;
+      const summaryEl = document.getElementById("erSimpleSummary");
+      if (summaryEl) {
+        if (ev.simple_explanation) {
+          summaryEl.textContent = ev.simple_explanation;
+        } else {
+          const ws = ev.weather_summary || {};
+          const windText =
+            ws.available && ws.wind_speed_avg != null
+              ? ws.wind_speed_avg < 8
+                ? `Low wind (${ws.wind_speed_avg} km/h) kept polluted air trapped close to the ground.`
+                : `Wind averaged ${ws.wind_speed_avg} km/h, helping slowly disperse the plume.`
+              : "";
+          const caseText = primaryCase
+            ? `Linked Community Report: "${primaryCase.title}" (${primaryCase.category}) at ${primaryCase.location_name}.`
+            : "";
+          summaryEl.textContent =
+            `In ${dataset.location.name}, ${dataset.pollutant_label} reached ${ev.peak_value} ${dataset.unit} around ${formatShortTime(ev.peak_time)} ` +
+            `(+${ev.pct_above_baseline}% above normal ${ev.baseline_value} ${dataset.unit}, lasting ${ev.duration_hours} hrs). ${windText} ${caseText}`.trim();
+        }
       }
-      renderEventSummary(ev, dataset);
+
+      const extraReports = primaryCase ? reports.filter((r) => r.id !== primaryCase.id) : reports;
+      const listEl = document.getElementById("erReportsList");
+      if (listEl) {
+        if (!extraReports.length) {
+          listEl.innerHTML = "";
+        } else {
+          listEl.innerHTML = extraReports
+            .slice(0, 2)
+            .map((r) => {
+              const photoHtml = r.photo_url
+                ? `<img src="${window.VayuMain.escapeHtml(r.photo_url)}" alt="${window.VayuMain.escapeHtml(r.title)}" class="vm-er-report-photo" />`
+                : "";
+              return `
+                <article class="vm-er-report-card">
+                  ${photoHtml}
+                  <div style="min-width:0; flex:1;">
+                    <strong style="font-size:0.86rem; color:var(--vm-teal-deep);">${window.VayuMain.escapeHtml(r.title)}</strong>
+                    <div class="vm-meta-line" style="margin-top:2px;">
+                      ${window.VayuMain.escapeHtml(r.location_name)} &middot; ${window.VayuMain.escapeHtml(r.status)}
+                    </div>
+                    <p style="margin:4px 0 0; font-size:0.8rem; color:var(--vm-teal-mid);">${window.VayuMain.escapeHtml(r.description)}</p>
+                  </div>
+                </article>
+              `;
+            })
+            .join("");
+        }
+      }
     }
 
     function selectEvent(ev, dataset) {
+      stopPlayback();
       replayState.selectedEvent = ev;
       if (workspaceEl) workspaceEl.classList.remove("vm-hidden");
 
-      document.querySelectorAll("#erEventsList .vm-replay-event-btn").forEach((btn) => {
-        btn.classList.toggle("active", btn.getAttribute("data-event-id") === ev.event_id);
-      });
+      if (statusBadge) {
+        statusBadge.className = "vm-badge-data vm-badge-verified";
+        statusBadge.textContent = ev.is_community_case ? "Community Case Replay" : "Spike Replay";
+      }
 
-      setText("erSelectedEventPill", `${ev.event_id} · +${ev.pct_above_baseline}% Peak`);
-      setText("erKpiStart", formatShortTime(ev.start_time));
-      setText("erKpiPeakTime", formatShortTime(ev.peak_time));
-      setText("erKpiEnd", formatShortTime(ev.end_time));
-      setText("erKpiBaseline", `${ev.baseline_value} ${dataset.unit}`);
-      setText("erKpiPeakVal", `${ev.peak_value} ${dataset.unit}`);
+      if (caseSelectEl && ev && ev.event_id) {
+        caseSelectEl.value = ev.event_id;
+      }
 
       renderEventTimelineChart(ev, dataset);
-      renderWeatherCorrelation(ev);
-      renderCommunityReports(ev, dataset.location);
-      renderEventSummary(ev, dataset);
-      fetchAiExplanation(ev, dataset);
+      renderSelectedCaseAndExplanation(ev, dataset);
+    }
+
+    function renderCaseAndSpikeButtons(data) {
+      if (!caseSelectEl) return;
+      const caseEvents = data.case_events || [];
+      const spikeEvents = data.events || [];
+      const communityCases = data.community_cases || [];
+      const otherCityCases = communityCases.filter((c) => !c.is_local);
+
+      const optionGroups = [];
+
+      if (caseEvents.length) {
+        const opts = caseEvents
+          .map((ev) => {
+            const rep = ev.case_report || {};
+            const label = `${rep.title || "Community Case"} — ${rep.location_name || data.location.name}`;
+            return `<option value="${window.VayuMain.escapeHtml(ev.event_id)}" data-kind="local">${window.VayuMain.escapeHtml(label)}</option>`;
+          })
+          .join("");
+        optionGroups.push(`<optgroup label="${window.VayuMain.escapeHtml(data.location.name)} Community Cases">${opts}</optgroup>`);
+      }
+
+      if (otherCityCases.length) {
+        const opts = otherCityCases
+          .map((c) => {
+            const label = `${c.title} — ${c.location_name}`;
+            return `<option value="CASE-${window.VayuMain.escapeHtml(c.id)}" data-switch-city="${window.VayuMain.escapeHtml(c.city_hint)}" data-case-id="${window.VayuMain.escapeHtml(c.id)}">${window.VayuMain.escapeHtml(label)}</option>`;
+          })
+          .join("");
+        optionGroups.push(`<optgroup label="Other Cities (Community Reports)">${opts}</optgroup>`);
+      }
+
+      if (spikeEvents.length) {
+        const opts = spikeEvents
+          .slice(0, 4)
+          .map((ev) => {
+            const label = `Spike ${ev.event_date} (${ev.peak_value} ${data.unit})`;
+            return `<option value="${window.VayuMain.escapeHtml(ev.event_id)}" data-kind="local">${window.VayuMain.escapeHtml(label)}</option>`;
+          })
+          .join("");
+        optionGroups.push(`<optgroup label="Detected Pollution Spikes">${opts}</optgroup>`);
+      }
+
+      setText("erReportsCountTag", `${communityCases.length} community case${communityCases.length === 1 ? "" : "s"} available`);
+      if (!optionGroups.length) {
+        caseSelectEl.innerHTML = `<option value="">No community cases available</option>`;
+        return;
+      }
+      caseSelectEl.innerHTML = optionGroups.join("");
+    }
+
+    if (caseSelectEl) {
+      caseSelectEl.addEventListener("change", () => {
+        const selectedOpt = caseSelectEl.options[caseSelectEl.selectedIndex];
+        const data = replayState.dataset;
+        if (!selectedOpt || !data) return;
+
+        const nextCity = selectedOpt.getAttribute("data-switch-city");
+        const caseId = selectedOpt.getAttribute("data-case-id");
+        if (nextCity) {
+          if (statusBadge) {
+            statusBadge.textContent = "Loading case...";
+          }
+          if (cityInput) {
+            cityInput.value = nextCity;
+          }
+          pendingTargetEventId = selectedOpt.value || null;
+          pendingTargetCaseId = caseId ? Number(caseId) : null;
+          runDetection();
+          return;
+        }
+
+        const eid = selectedOpt.value;
+        const allLocalPlayable = [...(data.case_events || []), ...(data.events || [])];
+        const found = allLocalPlayable.find((e) => e.event_id === eid);
+        if (found) {
+          selectEvent(found, data);
+        }
+      });
     }
 
     async function runDetection() {
+      stopPlayback();
       const city = (cityInput ? cityInput.value : "").trim();
       const startDate = startInput ? startInput.value : "";
       const endDate = endInput ? endInput.value : "";
       const pollutant = pollutantSel ? pollutantSel.value : "pm2_5";
-      const thresholdPct = Number(thresholdSel ? thresholdSel.value : 35);
 
       if (!city) {
-        window.VayuMain.showBanner("erMessageBanner", "Please select or enter an Indian city.", "error");
+        window.VayuMain.showBanner("erMessageBanner", "Please enter an Indian city.", "error");
         return;
       }
 
       window.VayuMain.showBanner("erMessageBanner", "", "info");
       if (detectBtn) {
         detectBtn.disabled = true;
-        detectBtn.textContent = "Analyzing...";
+        detectBtn.textContent = "Loading...";
       }
 
       try {
-        const data = await window.VayuApi.getEventReplay({
+        const reqParams = {
           city,
           start_date: startDate,
           end_date: endDate,
           pollutant,
-          threshold_pct: thresholdPct,
-        });
+          baseline_method: "median",
+          threshold_pct: 35,
+          window_hours: 12,
+        };
+        if (pendingTargetCaseId != null) {
+          reqParams.case_id = pendingTargetCaseId;
+        }
+        const data = await window.VayuApi.getEventReplay(reqParams);
         replayState.dataset = data;
         replayState.selectedEvent = null;
-        replayState.aiExplanation = "";
-        replayState.aiError = "";
 
-        setText(
-          "erBaselineRuleNote",
-          data.threshold_rule
-            ? `${data.threshold_rule} (${data.readings_count} hourly readings analyzed)`
-            : data.message || ""
-        );
+        const caseEvents = data.case_events || [];
+        const spikeEvents = data.events || [];
+        const allPlayable = [...caseEvents, ...spikeEvents];
 
-        const events = data.events || [];
-        if (!data.sufficient_data || !events.length) {
-          if (detectedWrap) detectedWrap.classList.add("vm-hidden");
+        if (detectedWrap) detectedWrap.classList.remove("vm-hidden");
+        renderCaseAndSpikeButtons(data);
+
+        if (!allPlayable.length) {
+          // If the entered city has zero local reports & zero spikes, auto-load the first Community Report city case so it never shows nothing
+          const firstGlobalCase = (data.community_cases || [])[0];
+          if (firstGlobalCase && firstGlobalCase.city_hint && firstGlobalCase.city_hint.toLowerCase() !== city.toLowerCase()) {
+            if (cityInput) cityInput.value = firstGlobalCase.city_hint;
+            pendingTargetEventId = `CASE-${firstGlobalCase.id}`;
+            pendingTargetCaseId = firstGlobalCase.id;
+            if (detectBtn) {
+              detectBtn.disabled = false;
+              detectBtn.textContent = "Load Cases";
+            }
+            return runDetection();
+          }
           if (workspaceEl) workspaceEl.classList.add("vm-hidden");
-          window.VayuMain.showBanner("erMessageBanner", data.message || "No pollution spike events detected.", "info");
+          window.VayuMain.showBanner("erMessageBanner", "Click any Community Report case above to replay and view its explanation.", "info");
           return;
         }
 
-        if (detectedWrap) detectedWrap.classList.remove("vm-hidden");
-        setText("erEventsCountTag", `${events.length} Event${events.length === 1 ? "" : "s"}`);
-
-        if (eventsListEl) {
-          eventsListEl.innerHTML = events
-            .map((ev) => {
-              const repBadge = ev.community_reports && ev.community_reports.length
-                ? `${ev.community_reports.length} Air Guardian report(s)`
-                : "0 community reports";
-              return `
-                <button type="button" class="vm-replay-event-btn" data-event-id="${window.VayuMain.escapeHtml(ev.event_id)}">
-                  <div style="display:flex; justify-content:space-between; gap:8px; align-items:center; width:100%;">
-                    <strong style="color:var(--vm-teal-deep);">${window.VayuMain.escapeHtml(ev.event_date)} · ${window.VayuMain.escapeHtml(ev.event_id)}</strong>
-                    <span class="vm-status-tag vm-status-bad">${ev.peak_value} ${window.VayuMain.escapeHtml(data.unit)}</span>
-                  </div>
-                  <div class="vm-meta-line">${window.VayuMain.escapeHtml(formatShortTime(ev.start_time))} – ${window.VayuMain.escapeHtml(formatShortTime(ev.end_time))} (${ev.duration_hours}h)</div>
-                  <div class="vm-meta-line">+${ev.pct_above_baseline}% vs baseline · ${window.VayuMain.escapeHtml(repBadge)}</div>
-                </button>
-              `;
-            })
-            .join("");
-
-          eventsListEl.querySelectorAll(".vm-replay-event-btn").forEach((btn) => {
-            btn.addEventListener("click", () => {
-              const eid = btn.getAttribute("data-event-id");
-              const found = events.find((e) => e.event_id === eid);
-              if (found) selectEvent(found, data);
-            });
-          });
-        }
-
-        selectEvent(events[0], data);
+        const preferred = pendingTargetEventId
+          ? allPlayable.find((e) => e.event_id === pendingTargetEventId) || allPlayable[0]
+          : allPlayable[0];
+        pendingTargetEventId = null;
+        pendingTargetCaseId = null;
+        selectEvent(preferred, data);
       } catch (err) {
-        if (detectedWrap) detectedWrap.classList.add("vm-hidden");
+        pendingTargetCaseId = null;
         if (workspaceEl) workspaceEl.classList.add("vm-hidden");
-        window.VayuMain.showBanner("erMessageBanner", err.message || "Unable to analyze historical events.", "error");
+        window.VayuMain.showBanner("erMessageBanner", err.message || "Could not load community report cases.", "error");
       } finally {
         if (detectBtn) {
           detectBtn.disabled = false;
-          detectBtn.textContent = "Detect Events";
+          detectBtn.textContent = "Load Cases";
         }
       }
+    }
+
+    if (prevStepBtn) {
+      prevStepBtn.addEventListener("click", () => {
+        stopPlayback();
+        applyReplayStep(replayState.activeStepIdx - 1);
+      });
+    }
+    if (nextStepBtn) {
+      nextStepBtn.addEventListener("click", () => {
+        stopPlayback();
+        applyReplayStep(replayState.activeStepIdx + 1);
+      });
+    }
+    if (replayScrubber) {
+      replayScrubber.addEventListener("input", () => {
+        stopPlayback();
+        applyReplayStep(Number(replayScrubber.value || 0));
+      });
+    }
+    if (playPauseBtn) {
+      playPauseBtn.addEventListener("click", () => {
+        const ev = replayState.selectedEvent;
+        if (!ev || !Array.isArray(ev.timeline) || !ev.timeline.length) return;
+        if (replayTimer) {
+          stopPlayback();
+          return;
+        }
+        playPauseBtn.textContent = "Pause";
+        if (replayState.activeStepIdx >= ev.timeline.length - 1) {
+          applyReplayStep(0);
+        }
+        replayTimer = setInterval(() => {
+          const curEv = replayState.selectedEvent;
+          if (!curEv || !curEv.timeline || !curEv.timeline.length) {
+            stopPlayback();
+            return;
+          }
+          const nextIdx = replayState.activeStepIdx + 1;
+          if (nextIdx >= curEv.timeline.length) {
+            stopPlayback();
+          } else {
+            applyReplayStep(nextIdx);
+          }
+        }, 850);
+      });
     }
 
     if (form) {
       form.addEventListener("submit", (e) => {
         e.preventDefault();
         runDetection();
-      });
-    }
-
-    if (explainBtn) {
-      explainBtn.addEventListener("click", () => {
-        if (replayState.selectedEvent && replayState.dataset) {
-          fetchAiExplanation(replayState.selectedEvent, replayState.dataset);
-        }
-      });
-    }
-
-    if (downloadPdfBtn) {
-      downloadPdfBtn.addEventListener("click", async () => {
-        const ev = replayState.selectedEvent;
-        const ds = replayState.dataset;
-        if (!ev || !ds) return;
-        downloadPdfBtn.disabled = true;
-        downloadPdfBtn.textContent = "Preparing PDF...";
-        try {
-          const { blob, filename } = await window.VayuApi.downloadEventReplayPdf({
-            city: ds.location.name,
-            pollutant_label: ds.pollutant_label,
-            unit: ds.unit,
-            event_date: ev.event_date,
-            start_time: formatShortTime(ev.start_time),
-            peak_time: formatShortTime(ev.peak_time),
-            end_time: formatShortTime(ev.end_time),
-            duration_hours: ev.duration_hours,
-            baseline_value: ev.baseline_value,
-            threshold_value: ev.threshold_value,
-            peak_value: ev.peak_value,
-            pct_above_baseline: ev.pct_above_baseline,
-            weather_summary: ev.weather_summary,
-            community_reports: ev.community_reports,
-            ai_explanation: replayState.aiExplanation || replayState.aiError || "",
-            data_sources: ds.data_sources,
-          });
-          const objUrl = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = objUrl;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          setTimeout(() => URL.revokeObjectURL(objUrl), 2500);
-        } catch (err) {
-          window.VayuMain.showBanner("erMessageBanner", err.message || "PDF download failed.", "error");
-        } finally {
-          downloadPdfBtn.disabled = false;
-          downloadPdfBtn.textContent = "Download PDF Report";
-        }
       });
     }
 
@@ -1509,6 +1466,15 @@
   let routeMap = null;
   let routeLayerGroup = null;
 
+  function formatDurationHrMin(minutes) {
+    const mins = Math.max(1, Math.round(Number(minutes) || 0));
+    const hrs = Math.floor(mins / 60);
+    const rem = mins % 60;
+    if (hrs > 0 && rem > 0) return `${hrs} hr ${rem} min`;
+    if (hrs > 0) return `${hrs} hr`;
+    return `${rem} min`;
+  }
+
   async function initRoutesPage() {
     const mapEl = document.getElementById("vmRouteMap");
     if (mapEl && typeof window.L !== "undefined") {
@@ -1528,19 +1494,23 @@
     }
 
     let selectedMode = "walking";
-    const modeButtons = document.querySelectorAll(".vm-mode-btn");
-    modeButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        modeButtons.forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        selectedMode = btn.getAttribute("data-mode") || "walking";
-      });
-    });
-
-    const escapeToggle = document.getElementById("vmEscapeModeToggle");
     const originInput = document.getElementById("vmRouteOrigin");
     const destInput = document.getElementById("vmRouteDest");
     const swapBtn = document.getElementById("vmSwapRouteBtn");
+
+    const modeButtons = document.querySelectorAll(".vm-mode-btn");
+    modeButtons.forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        modeButtons.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedMode = btn.getAttribute("data-mode") || "walking";
+        const oVal = (originInput ? originInput.value : "").trim();
+        const dVal = (destInput ? destInput.value : "").trim();
+        if (oVal && dVal) {
+          await searchRoutes(oVal, dVal, selectedMode);
+        }
+      });
+    });
 
     if (swapBtn && originInput && destInput) {
       swapBtn.addEventListener("click", async () => {
@@ -1550,7 +1520,7 @@
         const oVal = originInput.value.trim();
         const dVal = destInput.value.trim();
         if (oVal && dVal) {
-          await searchRoutes(oVal, dVal, selectedMode, escapeToggle ? escapeToggle.checked : false);
+          await searchRoutes(oVal, dVal, selectedMode);
         }
       });
     }
@@ -1565,37 +1535,22 @@
           window.VayuMain.showBanner("vmRoutesBanner", "Please enter both a starting location and destination.", "error");
           return;
         }
-        await searchRoutes(origin, destination, selectedMode, escapeToggle ? escapeToggle.checked : false);
+        await searchRoutes(origin, destination, selectedMode);
       });
     }
 
-    if (escapeToggle) {
-      escapeToggle.addEventListener("change", async () => {
-        const origin = (originInput ? originInput.value : "").trim();
-        const destination = (destInput ? destInput.value : "").trim();
-        if (origin && destination) {
-          await searchRoutes(origin, destination, selectedMode, escapeToggle.checked);
-        }
-      });
-    }
-
-    const urlEscape = new URLSearchParams(window.location.search).get("escape") === "1";
-    if (escapeToggle && urlEscape) {
-      escapeToggle.checked = true;
-    }
-
-    await searchRoutes("Bandra, Mumbai", "Colaba, Mumbai", selectedMode, escapeToggle ? escapeToggle.checked : false);
+    await searchRoutes("Bandra, Mumbai", "Colaba, Mumbai", selectedMode);
   }
 
-  async function searchRoutes(origin, destination, mode, escapeMode) {
+  async function searchRoutes(origin, destination, mode) {
     const submitBtn = document.getElementById("vmRouteSubmitBtn");
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = escapeMode ? "Finding Safe Escape..." : "Finding Routes...";
+      submitBtn.textContent = "Finding Routes...";
     }
     window.VayuMain.showBanner("vmRoutesBanner", "", "info");
     try {
-      const data = await window.VayuApi.getRoutes({ origin, destination, mode, escape_mode: escapeMode });
+      const data = await window.VayuApi.getRoutes({ origin, destination, mode });
       renderRoutesResult(data);
     } catch (err) {
       window.VayuMain.showBanner("vmRoutesBanner", err.message || "Unable to compute routes.", "error");
@@ -1623,9 +1578,10 @@
     }
 
     setText("vmRouteSelectedAvgAqi", avgAqi != null ? `Avg AQI ${avgAqi}` : "Avg AQI N/A");
+    const durLabel = routeObj ? routeObj.duration_formatted || formatDurationHrMin(routeObj.duration_min) : "";
     setText(
       "vmMapStatusBadge",
-      routeObj ? `${routeObj.label}: ${avgAqi != null ? `AQI ${avgAqi}` : `${routeObj.duration_min} min`}` : "Live AQI Checkpoints"
+      routeObj ? `${routeObj.label}: ${avgAqi != null ? `AQI ${avgAqi} · ${durLabel}` : durLabel}` : "Live AQI Checkpoints"
     );
 
     const tipsEl = document.getElementById("vmRouteTipsList");
@@ -1639,7 +1595,7 @@
       if ((routeObj.incident_hits || 0) > 0) {
         tips.push(`Route passes near ${routeObj.incident_hits} reported pollution incident(s) — stay alert.`);
       } else {
-        tips.push("No active citizen hotspot incidents detected directly on this path.");
+        tips.push("Safe corridor stays clear of active red pollution hotspot circles.");
       }
       if (data.best_travel_time) {
         tips.push(`Best upcoming clean window: ${window.VayuMain.formatHourLabel(data.best_travel_time.time)} (AQI ${data.best_travel_time.aqi}).`);
@@ -1652,20 +1608,6 @@
 
   function renderRoutesResult(data) {
     setText("vmRouteSummaryNote", data.recommendation_note || "");
-
-    const escBox = document.getElementById("vmEscapeAdvisoryBox");
-    const esc = data.emergency_escape || {};
-    if (escBox) {
-      if (data.escape_mode || (esc.nearby_hotspot_count || 0) > 0) {
-        escBox.classList.remove("vm-hidden");
-        escBox.innerHTML = `
-          <strong>${data.escape_mode ? "Emergency Escape Active" : "Hotspot Alert"}:</strong>
-          ${window.VayuMain.escapeHtml(esc.advice || "")}
-        `;
-      } else {
-        escBox.classList.add("vm-hidden");
-      }
-    }
 
     const bestWinEl = document.getElementById("vmRouteBestTime");
     if (bestWinEl) {
@@ -1722,8 +1664,9 @@
         .map((r, idx) => {
           const isSafe = r.route_type === "safe_air";
           const isSel = idx === defaultSelectedIdx;
+          const durText = r.duration_formatted || formatDurationHrMin(r.duration_min);
           const badgeHtml = isSafe
-            ? `<span class="vm-status-tag vm-status-good">${data.escape_mode ? "Escape Safe Air" : "Safe Air"}</span>`
+            ? `<span class="vm-status-tag vm-status-good">Safe Air</span>`
             : `<span class="vm-status-tag vm-status-moderate">Standard</span>`;
           const routeIcon = isSafe
             ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path></svg>`
@@ -1738,7 +1681,7 @@
                 ${badgeHtml}
               </div>
               <div class="vm-meta-line" style="margin-bottom:6px;">
-                <strong class="tabular-nums" style="color:var(--vm-ink-primary);">${r.duration_min} min</strong>
+                <strong class="tabular-nums" style="color:var(--vm-ink-primary);">${window.VayuMain.escapeHtml(durText)}</strong>
                 <span>·</span>
                 <span class="tabular-nums">${r.distance_km} km (${window.VayuMain.escapeHtml(data.mode)})</span>
                 <span>·</span>
@@ -1836,7 +1779,7 @@
         opacity: isSelected ? 0.94 : 0.62,
         dashArray: isSafe ? null : "6, 8",
       }).addTo(routeLayerGroup);
-      line.bindPopup(`<strong>${window.VayuMain.escapeHtml(r.label)}</strong><br>${r.duration_min} min · ${r.distance_km} km<br>Avg AQI: ${r.avg_aqi ?? "N/A"}`);
+      line.bindPopup(`<strong>${window.VayuMain.escapeHtml(r.label)}</strong><br>${window.VayuMain.escapeHtml(r.duration_formatted || formatDurationHrMin(r.duration_min))} · ${r.distance_km} km<br>Avg AQI: ${r.avg_aqi ?? "N/A"}`);
       coords.forEach((pt) => bounds.push(pt));
 
       if (isSelected) {
@@ -2195,31 +2138,24 @@
               : r.status === "Rejected"
               ? "vm-status-worse"
               : "vm-status-bad";
-          const vBadgeCls = r.is_verified ? "vm-badge-verified" : "vm-badge-unverified";
           const catCls = communityCategoryClass(r.category);
           return `
           <article class="vm-report-item ${catCls}">
             <div>
-              <div class="vm-aqi-header-row" style="margin-bottom:8px;">
-                <strong style="font-size:1.02rem;">${window.VayuMain.escapeHtml(r.title)}</strong>
-                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <div class="vm-aqi-header-row" style="margin-bottom:4px;">
+                <strong style="font-size:0.95rem;">${window.VayuMain.escapeHtml(r.title)}</strong>
+                <div style="display:flex; gap:5px; flex-wrap:wrap;">
                   <span class="vm-cat-chip">${window.VayuMain.escapeHtml(r.category)}</span>
                   <span class="vm-status-tag ${statusCls}">${window.VayuMain.escapeHtml(r.status)}</span>
                 </div>
               </div>
-              <div class="vm-meta-line" style="margin-bottom:8px;">
-                <span class="font-mono">${window.VayuMain.escapeHtml(r.report_code)}</span>
-                <span>·</span>
+              <div class="vm-meta-line" style="margin-bottom:4px; font-size:0.78rem;">
                 <span>${window.VayuMain.escapeHtml(r.location_name)}</span>
                 <span>·</span>
                 <span>${window.VayuMain.formatDateTime(r.created_at)}</span>
                 <span>·</span>
-                <span class="vm-badge-data ${vBadgeCls}">${window.VayuMain.escapeHtml(r.verification_label || r.status)}</span>
-              </div>
-              <p style="font-size:0.92rem; color:#235059; margin-bottom:10px;">${window.VayuMain.escapeHtml(r.description)}</p>
-              <div class="vm-meta-line">
-                <label for="status-${r.id}" style="font-weight:600;">Status:</label>
-                <select id="status-${r.id}" class="vm-select vm-report-status-select" data-id="${r.id}" style="width:auto; padding:5px 10px; font-size:0.84rem;">
+                <label for="status-${r.id}" style="font-weight:600;">Update:</label>
+                <select id="status-${r.id}" class="vm-select vm-report-status-select" data-id="${r.id}" style="width:auto; padding:2px 8px; font-size:0.78rem;">
                   <option value="Submitted" ${r.status === "Submitted" ? "selected" : ""}>Submitted</option>
                   <option value="Under Review" ${r.status === "Under Review" ? "selected" : ""}>Under Review</option>
                   <option value="Verified" ${r.status === "Verified" ? "selected" : ""}>Verified</option>
@@ -2227,6 +2163,7 @@
                   <option value="Rejected" ${r.status === "Rejected" ? "selected" : ""}>Rejected</option>
                 </select>
               </div>
+              <p class="vm-report-desc-compact">${window.VayuMain.escapeHtml(r.description)}</p>
             </div>
             ${
               r.photo_url
@@ -2259,6 +2196,53 @@
      ========================================================= */
   let alertMap = null;
   let alertLayerGroup = null;
+
+  function renderAlertMapVisuals(data) {
+    if (!alertMap || !alertLayerGroup || typeof window.L === "undefined") return;
+    const loc = data.location || {};
+    if (loc.latitude == null || loc.longitude == null) return;
+
+    alertLayerGroup.clearLayers();
+
+    const center = [loc.latitude, loc.longitude];
+    const aqi = data.current_aqi;
+    const cls = data.classification || {};
+    const zoneColor = aqiColorHex(aqi);
+
+    window.L.circle(center, {
+      radius: 6000,
+      color: zoneColor,
+      fillColor: zoneColor,
+      fillOpacity: 0.16,
+      weight: 1.5,
+    }).addTo(alertLayerGroup);
+
+    window.L.circle(center, {
+      radius: 2600,
+      color: zoneColor,
+      fillColor: zoneColor,
+      fillOpacity: 0.28,
+      weight: 2,
+    })
+      .addTo(alertLayerGroup)
+      .bindPopup(`<strong>${window.VayuMain.escapeHtml(loc.name)}</strong><br>AQI: ${aqi ?? "--"} (${window.VayuMain.escapeHtml(cls.category || "")})`);
+
+    window.L.marker(center).addTo(alertLayerGroup).bindPopup(`<strong>${window.VayuMain.escapeHtml(loc.name)}</strong><br>AQI ${aqi ?? "--"}`);
+
+    (data.hotspot_updates || []).forEach((h) => {
+      const pt = resolveReportCoords(h);
+      if (!pt) return;
+      window.L.circleMarker(pt, {
+        radius: 7,
+        color: "#ffffff",
+        weight: 2,
+        fillColor: h.is_verified ? "#DC2626" : "#D97706",
+        fillOpacity: 0.9,
+      })
+        .addTo(alertLayerGroup)
+        .bindPopup(`<strong>${window.VayuMain.escapeHtml(h.title)}</strong><br>${window.VayuMain.escapeHtml(h.location_name)}`);
+    });
+  }
 
   async function initAlertsPage() {
     const mapEl = document.getElementById("vmAlertMap");
@@ -2334,7 +2318,6 @@
 
     setText("alertsLocation", loc.name || "—");
     setText("alertsCurrentAqi", `${aqi ?? "--"} (${cls.category || "Unavailable"})`);
-    setText("alertsUpdatedAt", window.VayuMain.formatDateTime(data.recorded_at));
 
     const heroStrip = document.getElementById("vmAlertHeroStrip");
     const isElevated = liveAlerts.length > 0 || (aqi != null && aqi > 150);
@@ -2362,6 +2345,27 @@
     const riskScore = data.risk_score;
     const riskLevel = data.risk_level || "Low Risk";
     setText("vmAlertRiskScorePill", riskScore != null ? `Risk Score: ${riskScore}/100` : "Risk Score: --");
+    setText("vmAlertCardRiskScore", riskScore != null ? `${riskScore}/100 · ${riskLevel}` : riskLevel);
+    setText(
+      "vmAlertCardTriggers",
+      `${liveAlerts.length} Alert(s) · ${(data.hotspot_updates || []).length} Hotspot(s)`
+    );
+    setText(
+      "vmAlertCardSensitive",
+      aqi != null && aqi > 200
+        ? "Avoid outdoor exertion"
+        : aqi != null && aqi > 100
+        ? "Limit prolonged outdoor stay"
+        : "Normal activity safe"
+    );
+    setText(
+      "vmAlertCardOutdoor",
+      aqi != null && aqi > 200
+        ? "N95 mask & indoor air purifier"
+        : aqi != null && aqi > 100
+        ? "Carry mask near heavy traffic"
+        : "Good time for walks & commute"
+    );
     const riskExplainEl = document.getElementById("vmAlertRiskExplain");
     if (riskExplainEl) {
       riskExplainEl.innerHTML = `<strong>Risk Score (${riskScore != null ? `${riskScore}/100` : "--"} &middot; ${window.VayuMain.escapeHtml(riskLevel)}):</strong> ${window.VayuMain.escapeHtml(
@@ -2450,46 +2454,9 @@
       riskBadge.textContent = riskText;
     }
 
-    if (alertMap && alertLayerGroup && typeof window.L !== "undefined" && loc.latitude != null && loc.longitude != null) {
-      alertLayerGroup.clearLayers();
-      const center = [loc.latitude, loc.longitude];
-      const zoneColor = aqiColorHex(aqi);
-
-      window.L.circle(center, {
-        radius: 6000,
-        color: zoneColor,
-        fillColor: zoneColor,
-        fillOpacity: 0.16,
-        weight: 1.5,
-      }).addTo(alertLayerGroup);
-
-      window.L.circle(center, {
-        radius: 2600,
-        color: zoneColor,
-        fillColor: zoneColor,
-        fillOpacity: 0.28,
-        weight: 2,
-      })
-        .addTo(alertLayerGroup)
-        .bindPopup(`<strong>${window.VayuMain.escapeHtml(loc.name)}</strong><br>AQI: ${aqi ?? "--"} (${window.VayuMain.escapeHtml(cls.category || "")})`);
-
-      window.L.marker(center).addTo(alertLayerGroup).bindPopup(`<strong>${window.VayuMain.escapeHtml(loc.name)}</strong><br>AQI ${aqi ?? "--"}`);
-
-      (data.hotspot_updates || []).forEach((h) => {
-        const pt = resolveReportCoords(h);
-        if (!pt) return;
-        window.L.circleMarker(pt, {
-          radius: 7,
-          color: "#ffffff",
-          weight: 2,
-          fillColor: h.is_verified ? "#DC2626" : "#D97706",
-          fillOpacity: 0.9,
-        })
-          .addTo(alertLayerGroup)
-          .bindPopup(`<strong>${window.VayuMain.escapeHtml(h.title)}</strong><br>${window.VayuMain.escapeHtml(h.location_name)}`);
-      });
-
-      alertMap.setView(center, 11);
+    if (alertMap && loc.latitude != null && loc.longitude != null) {
+      renderAlertMapVisuals(data);
+      alertMap.setView([loc.latitude, loc.longitude], 11);
     }
 
     const precEl = document.getElementById("vmAlertPrecautions");
@@ -2612,22 +2579,15 @@
      6. ENVIRONMENTAL INTELLIGENCE REPORTS (reports.html)
      ========================================================= */
   async function initReportsPage() {
-
     let activePeriod = "daily";
-    let dateFilter = { start_date: "", end_date: "", compare_city: "" };
     const segBtns = document.querySelectorAll(".vm-seg-btn");
-    const exportBtn = document.getElementById("vmExportCsvBtn");
-    const printBtn = document.getElementById("vmPrintReportBtn");
-    const dateForm = document.getElementById("vmReportDateForm");
-    const clearDatesBtn = document.getElementById("repClearDatesBtn");
-    const compareInput = document.getElementById("repCompareCityInput");
 
     async function loadReports(period, extraParams, isInitial) {
       activePeriod = period;
       window.VayuMain.showBanner("vmReportsBanner", "", "info");
       const baseParams = window.VayuMain.getStoredLocationParams();
       try {
-        const params = Object.assign({}, baseParams, dateFilter, extraParams || {}, { period });
+        const params = Object.assign({}, baseParams, extraParams || {}, { period });
         const data = await window.VayuApi.getReports(params);
         window.VayuMain.updateHeaderWeather(data);
         renderReportsData(data);
@@ -2651,43 +2611,10 @@
       btn.addEventListener("click", () => {
         segBtns.forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
-        dateFilter = {
-          start_date: "",
-          end_date: "",
-          compare_city: compareInput ? compareInput.value.trim() : "",
-        };
-        setInputVal("repStartDate", "");
-        setInputVal("repEndDate", "");
         const p = btn.getAttribute("data-period") || "daily";
         loadReports(p, null, false);
       });
     });
-
-    if (dateForm) {
-      dateForm.addEventListener("submit", (e) => {
-        e.preventDefault();
-        const sDate = document.getElementById("repStartDate").value;
-        const eDate = document.getElementById("repEndDate").value;
-        const cmpCity = compareInput ? compareInput.value.trim() : "";
-        dateFilter = {
-          start_date: sDate,
-          end_date: eDate,
-          compare_city: cmpCity,
-        };
-        const targetPeriod = sDate || eDate ? "custom" : activePeriod;
-        loadReports(targetPeriod, null, false);
-      });
-    }
-
-    if (clearDatesBtn) {
-      clearDatesBtn.addEventListener("click", () => {
-        dateFilter = { start_date: "", end_date: "", compare_city: "" };
-        setInputVal("repStartDate", "");
-        setInputVal("repEndDate", "");
-        setInputVal("repCompareCityInput", "");
-        loadReports("daily", null, false);
-      });
-    }
 
     window.addEventListener("vayumitra:citychange", (ev) => {
       const city = ev.detail && ev.detail.city;
@@ -2697,38 +2624,11 @@
       }
     });
 
-    if (exportBtn) {
-      exportBtn.addEventListener("click", () => {
-        const params = Object.assign({}, window.VayuMain.getStoredLocationParams(), dateFilter, { period: activePeriod });
-        window.location.href = window.VayuApi.getExportCsvUrl(params);
-      });
-    }
-
-    if (printBtn) {
-      printBtn.addEventListener("click", () => window.print());
-    }
-
     await loadReports(activePeriod, null, true);
   }
 
   function renderReportsData(data) {
-    setText("repLocation", data.location ? `${data.location.name} (${data.aqi_standard || "NAQI"})` : "—");
-    setText("repGeneratedAt", window.VayuMain.formatDateTime(data.generated_at));
-
-    const cmpSection = document.getElementById("repCompareSection");
-    if (cmpSection) {
-      if (data.comparison) {
-        const cmp = data.comparison;
-        cmpSection.classList.remove("vm-hidden");
-        setText("repCompareNote", cmp.comparison_note || "");
-        setText("repCmpCityName", cmp.location ? cmp.location.name : "—");
-        setText("repCmpAvgAqi", `${cmp.average_aqi} (${cmp.average_category})`);
-        setText("repCmpRangeAqi", `${cmp.highest_aqi} / ${cmp.lowest_aqi}`);
-        setText("repCmpPm25", cmp.average_pm25 != null ? `${cmp.average_pm25} µg/m³` : "N/A");
-      } else {
-        cmpSection.classList.add("vm-hidden");
-      }
-    }
+    setText("repLocation", data.location ? data.location.name : "—");
 
     if (!data.sufficient_data || !data.summary) {
       window.VayuMain.showBanner("vmReportsBanner", data.message || "Insufficient historical data to generate report.", "info");
@@ -2740,6 +2640,14 @@
     setText("repHighAqi", `${s.highest_aqi}`);
     setText("repLowAqi", `${s.lowest_aqi}`);
     setText("repNetChange", `${s.net_change >= 0 ? "+" : ""}${s.net_change}`);
+    setText(
+      "repDominantPollutant",
+      s.dominant_pollutant ? `${s.dominant_pollutant.key} (${s.dominant_pollutant.value} ${s.dominant_pollutant.unit})` : "—"
+    );
+    setText(
+      "repHoursSplit",
+      `${s.clean_hours ?? "--"} clean · ${s.elevated_hours ?? "--"} elevated hrs`
+    );
     setText("repRiskScore", s.risk_score != null ? `${s.risk_score}/100 (${s.risk_level || "--"})` : "--");
 
     const repRiskBadge = document.getElementById("repRiskBadge");
@@ -2765,14 +2673,20 @@
       )}`;
     }
 
+    const obsEl = document.getElementById("repObservationsList");
+    if (obsEl) {
+      const obs = Array.isArray(s.observations) ? s.observations : [];
+      obsEl.innerHTML = obs.length
+        ? obs.map((o) => `<li>${window.VayuMain.escapeHtml(o)}</li>`).join("")
+        : `<li>Air quality observations updated for the active period.</li>`;
+    }
+
     renderAqiGaugeSvg("vmReportsAvgGauge", s.average_aqi, "AQI (Avg)", s.average_category);
 
-    const topCitiesEl = document.getElementById("repTopCitiesList");
-    if (topCitiesEl) {
-      const cities = data.top_polluted_cities || [];
-      topCitiesEl.innerHTML = cities.length
+    const renderCityRankRows = (cities, emptyText) =>
+      cities && cities.length
         ? cities
-            .slice(0, 6)
+            .slice(0, 5)
             .map(
               (c, idx) => `
               <div class="vm-rank-item">
@@ -2788,7 +2702,16 @@
             `
             )
             .join("")
-        : `<span class="vm-meta-line">Live city rankings temporarily unavailable.</span>`;
+        : `<span class="vm-meta-line">${emptyText}</span>`;
+
+    const topCitiesEl = document.getElementById("repTopCitiesList");
+    if (topCitiesEl) {
+      topCitiesEl.innerHTML = renderCityRankRows(data.top_polluted_cities || [], "Live city rankings temporarily unavailable.");
+    }
+
+    const cleanCitiesEl = document.getElementById("repCleanestCitiesList");
+    if (cleanCitiesEl) {
+      cleanCitiesEl.innerHTML = renderCityRankRows(data.cleanest_cities || [], "Cleanest city rankings temporarily unavailable.");
     }
 
     const hsEl = document.getElementById("repHotspotsList");
@@ -2825,17 +2748,6 @@
         tension: 0.3,
       },
     ];
-    if (data.comparison && Array.isArray(data.comparison.series) && data.comparison.series.length) {
-      const cmpSeries = data.comparison.series;
-      trendDatasets.push({
-        label: `${data.comparison.location.name} (${data.period.toUpperCase()} AQI)`,
-        data: series.map((r, idx) => (cmpSeries[idx] ? cmpSeries[idx].aqi : null)),
-        borderColor: "#0ea5e9",
-        borderDash: [5, 5],
-        fill: false,
-        tension: 0.3,
-      });
-    }
     renderOrReplaceChart("vmReportsTrendChart", {
       type: "line",
       data: {
@@ -3037,7 +2949,6 @@
       sum.estimated_pm25_exposure != null ? `${sum.estimated_pm25_exposure} µg/m³` : "N/A"
     );
     setText("twinTotalHours", `${sum.total_logged_hours ?? 0} hrs/day`);
-    setText("twinOutdoorHours", `${sum.outdoor_hours ?? 0} hrs/day`);
 
     renderAqiGaugeSvg("vmTwinExposureGauge", sum.weighted_exposure_aqi, "AQI Exposure", sum.exposure_category);
 
@@ -3232,7 +3143,8 @@
     const loginForm = document.getElementById("vmLoginForm");
     const regForm = document.getElementById("vmRegisterForm");
     const fillDemoBtn = document.getElementById("vmFillDemoBtn");
-    const nextUrl = new URLSearchParams(window.location.search).get("next") || "index.html";
+    const rawNext = new URLSearchParams(window.location.search).get("next") || "";
+    const nextUrl = /^[a-z0-9_-]+\.html$/i.test(rawNext) ? rawNext : "index.html";
 
     function switchTab(mode) {
       const isLogin = mode === "login";
@@ -3387,5 +3299,388 @@
     else if (page === "profile") initProfilePage();
     else if (page === "login") initLoginPage();
     else if (page === "logout") initLogoutPage();
+    else if (page === "greensteps") initGreenStepsPage();
   });
+
+  /* =========================================================
+     9. GREEN STEPS – SUSTAINABLE ACTION TRACKER (greensteps.html)
+     ========================================================= */
+  async function initGreenStepsPage() {
+    const esc = (v) => window.VayuMain.escapeHtml(v == null ? "" : String(v));
+    let gsData = null;
+
+    const roleBadgeEl = document.getElementById("vmGsRoleBadge");
+    const gridEl = document.getElementById("vmGsChallengesGrid");
+    const catFilterEl = document.getElementById("vmGsCategoryFilter");
+    const diffFilterEl = document.getElementById("vmGsDifficultyFilter");
+
+    function showGsBanner(msg, type) {
+      window.VayuMain.showBanner("vmGsBanner", msg, type || "info");
+    }
+
+    function renderSparkline(weeklyProgress) {
+      const wrap = document.getElementById("vmGsSparklineWrap");
+      if (!wrap) return;
+      const days = Array.isArray(weeklyProgress) && weeklyProgress.length ? weeklyProgress : [];
+      const vals = days.length
+        ? days.map((d, idx) => Math.max(8, Number(d.points_earned || 0) + (idx + 1) * 4))
+        : [10, 18, 24, 20, 32, 42];
+      const w = 220;
+      const h = 40;
+      const pad = 6;
+      const minV = Math.min(...vals, 0);
+      const maxV = Math.max(...vals, 10);
+      const span = Math.max(1, maxV - minV);
+      const pts = vals.map((v, i) => {
+        const x = pad + (i * (w - pad * 2)) / Math.max(1, vals.length - 1);
+        const y = h - pad - ((v - minV) / span) * (h - pad * 2);
+        return [Number(x.toFixed(1)), Number(y.toFixed(1))];
+      });
+      const linePath = pts.map((p, idx) => `${idx === 0 ? "M" : "L"}${p[0]} ${p[1]}`).join(" ");
+      const areaPath = `${linePath} L${pts[pts.length - 1][0]} ${h} L${pts[0][0]} ${h} Z`;
+      const dotsHtml = pts
+        .map((p, idx) => `<circle cx="${p[0]}" cy="${p[1]}" r="${idx === pts.length - 1 ? 3.5 : 2.5}" fill="${idx === pts.length - 1 ? "#15803d" : "#22a542"}" stroke="#ffffff" stroke-width="1"/>`)
+        .join("");
+
+      wrap.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="vmGsSparkGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#22c55e" stop-opacity="0.32"/>
+            <stop offset="100%" stop-color="#22c55e" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        <path d="${areaPath}" fill="url(#vmGsSparkGrad)"/>
+        <path d="${linePath}" fill="none" stroke="#22a542" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        ${dotsHtml}
+      </svg>`;
+    }
+
+    function renderChallengesGrid() {
+      if (!gridEl || !gsData) return;
+      const catVal = catFilterEl ? catFilterEl.value : "";
+      const diffVal = diffFilterEl ? diffFilterEl.value : "";
+      const tasks = (gsData.tasks || []).filter((t) => {
+        if (catVal && t.category !== catVal) return false;
+        if (diffVal && t.difficulty !== diffVal) return false;
+        return true;
+      });
+
+      if (!tasks.length) {
+        gridEl.innerHTML = `<article class="vm-card"><strong>No challenges match this filter.</strong><p class="vm-section-subtitle">Reset category or difficulty filters to view all daily tasks.</p></article>`;
+        return;
+      }
+
+      gridEl.innerHTML = tasks
+        .map((t, idx) => {
+          const isDone = t.status === "approved";
+          const proofHtml = isDone
+            ? `
+              <div class="vm-gs-logged-note">
+                <strong>Logged Note:</strong>
+                <span>${esc(t.declaration || "Verified eco-action logged.")}</span>
+                ${t.proof_url ? `<a href="${esc(t.proof_url)}" target="_blank" rel="noopener" class="vm-gs-proof-link">View Proof Photo</a>` : ""}
+              </div>
+              <div class="vm-gs-task-footer">
+                <span class="vm-gs-done-pill">COMPLETED (+${t.points} PTS &middot; ${t.co2_saved_kg} KG CO<sub>2</sub>)</span>
+              </div>
+            `
+            : `
+              <form class="vm-gs-proof-box" data-gs-form="${t.id}">
+                <label class="vm-gs-proof-label" for="gs-note-${t.id}">Write a short note if you want (optional):</label>
+                <textarea id="gs-note-${t.id}" rows="2" class="vm-input vm-gs-proof-textarea" name="declaration" placeholder="${esc(t.proof_hint || "Share what you did today (optional)...")}"></textarea>
+                <div class="vm-gs-proof-row">
+                  <label class="vm-gs-upload-pill" title="Attach optional photo">
+                    <input type="file" name="proof" accept="image/png,image/jpeg,image/webp" class="vm-gs-file-hidden" data-gs-file="${t.id}" />
+                    <span data-gs-file-label="${t.id}">Photo (optional)</span>
+                  </label>
+                  <button type="submit" class="vm-btn vm-btn-primary vm-btn-sm">Complete Task</button>
+                </div>
+              </form>
+            `;
+
+          return `
+            <article class="vm-card vm-gs-task-card-compact ${isDone ? "is-done" : ""}">
+              <div class="vm-gs-task-pills-row">
+                <div class="vm-gs-task-pills-left">
+                  <span class="vm-gs-pill-neutral">${esc(t.category)}</span>
+                  <span class="vm-gs-pill-neutral">${esc(t.difficulty)}</span>
+                  <span class="vm-gs-pill-co2">~${t.co2_saved_kg} KG CO<sub>2</sub> AVOIDED</span>
+                </div>
+                <span class="vm-gs-pill-pts">+${t.points} pts</span>
+              </div>
+
+              <div class="vm-gs-task-title-row">
+                <h3>${idx + 1}. ${esc(t.title)}</h3>
+                <span class="vm-gs-status-badge ${isDone ? "is-done" : "is-active"}">${isDone ? "COMPLETED" : "ACTIVE"}</span>
+              </div>
+
+              <p class="vm-gs-task-short-desc">${esc(t.description)}</p>
+
+              <div class="vm-gs-howto-box">
+                <strong>How to complete:</strong> ${esc(t.instructions || t.description)}
+              </div>
+
+              ${proofHtml}
+            </article>
+          `;
+        })
+        .join("");
+
+      gridEl.querySelectorAll("[data-gs-file]").forEach((fileInput) => {
+        fileInput.addEventListener("change", () => {
+          const tid = fileInput.getAttribute("data-gs-file");
+          const lbl = gridEl.querySelector(`[data-gs-file-label="${tid}"]`);
+          if (lbl) {
+            lbl.textContent = fileInput.files && fileInput.files[0] ? "Photo Attached" : "Photo (optional)";
+          }
+        });
+      });
+
+      gridEl.querySelectorAll("[data-gs-form]").forEach((formEl) => {
+        formEl.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const tid = Number(formEl.getAttribute("data-gs-form"));
+          const noteInput = formEl.querySelector('textarea[name="declaration"], input[name="declaration"]');
+          const fileInput = formEl.querySelector('input[name="proof"]');
+          const submitBtn = formEl.querySelector('button[type="submit"]');
+          const noteVal = (noteInput ? noteInput.value : "").trim();
+          const hasFile = Boolean(fileInput && fileInput.files && fileInput.files[0]);
+
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Completing...";
+          }
+          try {
+            const fd = new FormData();
+            if (noteVal) fd.append("declaration", noteVal);
+            if (hasFile) fd.append("proof", fileInput.files[0]);
+            const res = await window.VayuApi.completeGreenTask(tid, fd);
+            showGsBanner(res.message || "Challenge completed!", "success");
+            await loadGreenSteps();
+          } catch (err) {
+            showGsBanner(err.message || "Could not complete challenge.", "error");
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = "Complete Task";
+            }
+          }
+        });
+      });
+    }
+
+    function renderLeaderboard() {
+      const lbEl = document.getElementById("vmGsLeaderboardList");
+      const hintEl = document.getElementById("vmGsNextLevelHint");
+      const s = (gsData && gsData.summary) || {};
+      if (hintEl) {
+        hintEl.textContent = s.next_level_hint || "Keep earning points";
+      }
+      if (!lbEl) return;
+      const rows = (gsData && gsData.leaderboard) || [];
+      if (!rows.length) {
+        lbEl.innerHTML = `<span class="vm-meta-line">Leaderboard unavailable.</span>`;
+        return;
+      }
+      lbEl.innerHTML = rows
+        .slice(0, 4)
+        .map(
+          (r) => `
+          <div class="vm-gs-leaderboard-row ${r.is_current_user ? "is-me" : ""}">
+            <div class="vm-gs-lb-left">
+              <span class="vm-gs-lb-rank">#${r.rank}</span>
+              <div class="vm-gs-lb-meta">
+                <strong>${esc(r.name)}${r.is_current_user ? ' <span class="vm-gs-you-tag">You</span>' : ""}</strong>
+                <span>${esc(r.city)} &middot; ${r.completed_count} done &middot; ${r.streak_days}d streak</span>
+              </div>
+            </div>
+            <span class="vm-gs-lb-pts tabular-nums">${r.total_points} pts</span>
+          </div>
+        `
+        )
+        .join("");
+    }
+
+    function renderImpactExplanation() {
+      const formulaEl = document.getElementById("gsImpactFormulaText");
+      const breakdownEl = document.getElementById("gsImpactBreakdownList");
+      if (formulaEl) {
+        formulaEl.textContent =
+          (gsData && gsData.impact_formula) ||
+          "Each green step lowers local tailpipe smoke, power-plant pollution, and open-waste fumes for cleaner neighbourhood air.";
+      }
+      if (!breakdownEl) return;
+      const items = (gsData && gsData.impact_breakdown) || [];
+      if (!items.length) {
+        breakdownEl.innerHTML = `<span class="vm-meta-line">Complete a challenge to see how it helps your local air quality and community.</span>`;
+        return;
+      }
+      breakdownEl.innerHTML = items
+        .map(
+          (item) => `
+          <div class="vm-gs-impact-item ${item.completed ? "is-done" : ""}">
+            <div class="vm-gs-impact-item-head">
+              <strong>${esc(item.title)}</strong>
+              <span class="tabular-nums">${item.completed ? `${item.co2_saved_kg} kg saved` : `Potential: ${item.co2_saved_kg} kg`}</span>
+            </div>
+            <p>${esc(item.explanation)}</p>
+          </div>
+        `
+        )
+        .join("");
+    }
+
+    function medalIconSvg(medal, earned) {
+      const palette =
+        medal === "gold"
+          ? { rim: "#ca8a04", fill: "#facc15", ribbon: "#dc2626", text: "#713f12" }
+          : medal === "silver"
+          ? { rim: "#64748b", fill: "#e2e8f0", ribbon: "#0284c7", text: "#1e293b" }
+          : { rim: "#b45309", fill: "#f59e0b", ribbon: "#15803d", text: "#78350f" };
+      const c = earned
+        ? palette
+        : { rim: "#cbd5e1", fill: "#f1f5f9", ribbon: "#94a3b8", text: "#64748b" };
+      return `
+        <svg width="30" height="34" viewBox="0 0 32 36" fill="none" aria-hidden="true">
+          <path d="M9 2H15L17 12H11L9 2Z" fill="${c.ribbon}"/>
+          <path d="M23 2H17L15 12H21L23 2Z" fill="${c.ribbon}" opacity="0.82"/>
+          <circle cx="16" cy="22" r="10.5" fill="${c.fill}" stroke="${c.rim}" stroke-width="2"/>
+          <path d="M16 16.5L17.6 19.8L21.2 20.3L18.6 22.8L19.2 26.4L16 24.7L12.8 26.4L13.4 22.8L10.8 20.3L14.4 19.8L16 16.5Z" fill="${c.text}"/>
+        </svg>
+      `;
+    }
+
+    function renderMedalsAndRewards() {
+      const medalsGrid = document.getElementById("vmGsMedalsGrid");
+      const medalsSummary = document.getElementById("vmGsMedalsSummary");
+      const rewardsList = document.getElementById("vmGsRewardsList");
+      const badges = (gsData && gsData.badges) || [];
+      const rewards = (gsData && gsData.rewards) || [];
+
+      if (medalsSummary) {
+        const earnedCount = badges.filter((b) => b.earned).length;
+        medalsSummary.textContent = `${earnedCount} / ${badges.length} earned`;
+      }
+
+      if (medalsGrid) {
+        if (!badges.length) {
+          medalsGrid.innerHTML = `<span class="vm-meta-line">No medals configured.</span>`;
+        } else {
+          medalsGrid.innerHTML = badges
+            .map((b) => {
+              const tier = (b.medal || "bronze").toLowerCase();
+              return `
+                <div class="vm-gs-medal-card is-${tier} ${b.earned ? "is-earned" : "is-locked"}" title="${esc(b.description)}">
+                  <div class="vm-gs-medal-icon">${medalIconSvg(tier, b.earned)}</div>
+                  <div class="vm-gs-medal-meta">
+                    <strong>${esc(b.title)}</strong>
+                    <span>${b.earned ? `${esc(b.tier || "Medal")} Earned` : esc(b.description)}</span>
+                  </div>
+                </div>
+              `;
+            })
+            .join("");
+        }
+      }
+
+      if (rewardsList) {
+        if (!rewards.length) {
+          rewardsList.innerHTML = `<span class="vm-meta-line">No rewards available.</span>`;
+        } else {
+          rewardsList.innerHTML = rewards
+            .map((rw) => {
+              const btnHtml = rw.claimed
+                ? `<span class="vm-gs-reward-state is-claimed">Claimed</span>`
+                : rw.unlocked
+                ? `<button type="button" class="vm-btn vm-btn-primary vm-btn-sm" data-claim-reward="${esc(rw.code)}">Claim</button>`
+                : `<span class="vm-gs-reward-state is-locked">${rw.required_points} pts</span>`;
+              return `
+                <div class="vm-gs-reward-chip ${rw.claimed ? "is-claimed" : rw.unlocked ? "is-unlocked" : ""}">
+                  <div class="vm-gs-reward-meta">
+                    <strong>${esc(rw.title)}</strong>
+                    <span>${esc(rw.description)}</span>
+                  </div>
+                  ${btnHtml}
+                </div>
+              `;
+            })
+            .join("");
+
+          rewardsList.querySelectorAll("[data-claim-reward]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const code = btn.getAttribute("data-claim-reward");
+              if (!code) return;
+              btn.disabled = true;
+              btn.textContent = "Claiming...";
+              try {
+                const res = await window.VayuApi.claimGreenReward(code);
+                showGsBanner(res.message || "Reward claimed!", "success");
+                await loadGreenSteps();
+              } catch (err) {
+                showGsBanner(err.message || "Unable to claim reward.", "error");
+                btn.disabled = false;
+                btn.textContent = "Claim";
+              }
+            });
+          });
+        }
+      }
+    }
+
+    function renderAll() {
+      if (!gsData) return;
+      const s = gsData.summary || {};
+
+      if (roleBadgeEl) {
+        roleBadgeEl.textContent = gsData.user ? `${gsData.user.name} · ${s.badge_title || "Eco Starter"}` : "Active Tracker";
+      }
+
+      setText("gsTotalPoints", `${s.total_points ?? 0} pts`);
+      setText("gsBadgeTitle", s.badge_title || "Eco Warrior");
+
+      const pct = Math.max(0, Math.min(100, Number(s.progress_pct || 0)));
+      setText("gsProgressPct", `${pct}%`);
+      const arc = document.getElementById("gsProgressRingArc");
+      if (arc) {
+        const circumference = 2 * Math.PI * 46;
+        const offset = circumference * (1 - pct / 100);
+        arc.setAttribute("stroke-dasharray", circumference.toFixed(2));
+        arc.setAttribute("stroke-dashoffset", offset.toFixed(2));
+      }
+
+      setText("gsChallengesRatio", `${s.completed_count ?? 0} / ${s.total_tasks ?? 8}`);
+      setText("gsStreakDays", `${s.streak_days ?? 0}`);
+      setText("gsProgressPoints", `${s.total_points ?? 0}`);
+
+      const co2 = Number(s.total_co2_saved_kg ?? 0);
+      setText("gsTotalCo2Saved", `~ ${co2} kg`);
+      const trees = Math.max(0, Math.round(co2 / 1.75));
+      setText(
+        "gsTreeEquivText",
+        trees === 1
+          ? "1.75 kg CO2 ≈ 1 young sapling's monthly absorption."
+          : `Equivalent to ~${trees} young saplings absorbing CO2 for a month.`
+      );
+
+      renderSparkline(gsData.weekly_progress);
+      renderMedalsAndRewards();
+      renderChallengesGrid();
+      renderLeaderboard();
+      renderImpactExplanation();
+    }
+
+    async function loadGreenSteps() {
+      try {
+        gsData = await window.VayuApi.getGreenSteps();
+        renderAll();
+      } catch (err) {
+        showGsBanner(err.message || "Failed to load Green Steps tracker.", "error");
+      }
+    }
+
+    if (catFilterEl) catFilterEl.addEventListener("change", renderChallengesGrid);
+    if (diffFilterEl) diffFilterEl.addEventListener("change", renderChallengesGrid);
+
+    await loadGreenSteps();
+  }
 })(window, document);
+
