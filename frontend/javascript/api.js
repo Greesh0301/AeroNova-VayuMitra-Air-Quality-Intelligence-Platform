@@ -197,5 +197,38 @@
         body: JSON.stringify(payload),
       });
     },
+    getGreenSteps() {
+      return requestJson("/api/greensteps");
+    },
+    startGreenTask(taskId) {
+      return requestJson(`/api/greensteps/tasks/${taskId}/start`, {
+        method: "POST",
+      });
+    },
+    completeGreenTask(taskId, formData) {
+      return requestJson(`/api/greensteps/tasks/${taskId}/complete`, {
+        method: "POST",
+        body: formData,
+      });
+    },
+    claimGreenReward(rewardCode) {
+      return requestJson(`/api/greensteps/rewards/${encodeURIComponent(rewardCode)}/claim`, {
+        method: "POST",
+      });
+    },
+    reviewGreenSubmission(submissionId, decision, notes) {
+      return requestJson(`/api/greensteps/admin/submissions/${submissionId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, notes }),
+      });
+    },
+    estimateGreenImpact(payload) {
+      return requestJson("/api/greensteps/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    },
   };
 })(window);

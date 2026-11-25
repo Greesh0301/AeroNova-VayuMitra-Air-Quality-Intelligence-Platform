@@ -40,7 +40,7 @@
         <a href="alerts.html" class="vm-nav-link">Alerts</a>
         <a href="reports.html" class="vm-nav-link active">Reports</a>
         <a href="community.html" class="vm-nav-link">Community</a>
-        <a href="profile.html" class="vm-nav-link">Profile</a>
+        <a href="profile.html" class="vm-nav-link">Settings</a>
       </div>
       <form id="vmNavSearchForm" class="vm-nav-search" role="search" aria-label="Search city air quality">
         <div class="vm-nav-search-box">
@@ -66,7 +66,7 @@
       <a href="alerts.html" class="vm-nav-link">Alerts</a>
       <a href="reports.html" class="vm-nav-link active">Reports</a>
       <a href="community.html" class="vm-nav-link">Community</a>
-      <a href="profile.html" class="vm-nav-link">Profile</a>
+      <a href="profile.html" class="vm-nav-link">Settings</a>
     </div>
   </header>
 
@@ -76,7 +76,7 @@
         <div>
           <h1 class="vm-page-title">Reports</h1>
           <p class="vm-section-subtitle">
-            Environmental Intelligence Reports &middot; <strong id="repLocation">--</strong> &middot; Updated <span id="repGeneratedAt">--</span>
+            Environmental Intelligence Reports &middot; <strong id="repLocation">--</strong>
           </p>
         </div>
 
@@ -86,66 +86,35 @@
             <button type="button" class="vm-seg-btn" data-period="weekly">Last 7 Days</button>
             <button type="button" class="vm-seg-btn" data-period="monthly">Monthly</button>
           </div>
-          <button id="vmExportCsvBtn" type="button" class="vm-btn vm-btn-primary vm-btn-sm">Export Report CSV</button>
-          <button id="vmPrintReportBtn" type="button" class="vm-btn vm-btn-glass vm-btn-sm">Print</button>
         </div>
       </div>
     </section>
 
     <div id="vmReportsBanner" class="vm-banner vm-hidden"></div>
 
-    <!-- Scrollable Section 1: Date Range & Compare City -->
-    <section class="vm-section" style="padding-top:4px; padding-bottom:8px;">
-      <article class="vm-card" style="padding:14px 18px;">
-        <form id="vmReportDateForm" class="vm-filter-bar" style="margin-bottom:0;">
-          <label for="repStartDate" class="vm-form-label">From</label>
-          <input id="repStartDate" type="date" class="vm-input" />
-          <label for="repEndDate" class="vm-form-label">To</label>
-          <input id="repEndDate" type="date" class="vm-input" />
-          <label for="repCompareCityInput" class="vm-form-label">Compare City</label>
-          <input id="repCompareCityInput" type="search" class="vm-input" placeholder="e.g., Delhi, Pune..." />
-          <button type="submit" class="vm-btn vm-btn-primary vm-btn-sm">Apply</button>
-          <button id="repClearDatesBtn" type="button" class="vm-btn vm-btn-outline vm-btn-sm">Reset</button>
-        </form>
-      </article>
-    </section>
-
-    <section id="repCompareSection" class="vm-section vm-hidden" style="padding-top:4px; padding-bottom:4px;">
-      <article class="vm-card" style="padding:16px 20px;">
-        <div class="vm-aqi-header-row" style="margin-bottom:8px;">
-          <strong>City Comparison</strong>
-          <span id="repCompareNote" class="vm-meta-line">--</span>
-        </div>
-        <div class="vm-kpi-row-4">
-          <div class="vm-twin-item-row"><span>Compared City</span><strong id="repCmpCityName">--</strong></div>
-          <div class="vm-twin-item-row"><span>Avg AQI</span><strong id="repCmpAvgAqi" class="tabular-nums">--</strong></div>
-          <div class="vm-twin-item-row"><span>Peak / Low</span><strong id="repCmpRangeAqi" class="tabular-nums">--</strong></div>
-          <div class="vm-twin-item-row"><span>Mean PM2.5</span><strong id="repCmpPm25" class="tabular-nums">--</strong></div>
-        </div>
-      </article>
-    </section>
-
-    <!-- Scrollable Section 2: AQI Trend & Pollutant Levels -->
+    <!-- Scrollable Section 1: AQI Trend & Pollutant Levels -->
     <section class="vm-section">
       <div class="vm-two-col">
         <article class="vm-card">
-          <h2 class="vm-section-title vm-title-with-ico" style="margin-bottom:12px;">
+          <h2 class="vm-section-title vm-title-with-ico" style="margin-bottom:4px;">
             <span class="vm-head-ico" aria-hidden="true">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
             </span>
             <span>AQI Trend</span>
           </h2>
+          <p class="vm-card-explain">Tracks how the Air Quality Index rises and falls over the selected period so you can spot daily peaks and cleaner hours.</p>
           <div class="vm-chart-box">
             <canvas id="vmReportsTrendChart"></canvas>
           </div>
         </article>
         <article class="vm-card">
-          <h2 class="vm-section-title vm-title-with-ico" style="margin-bottom:12px;">
+          <h2 class="vm-section-title vm-title-with-ico" style="margin-bottom:4px;">
             <span class="vm-head-ico" aria-hidden="true">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path></svg>
             </span>
             <span>Pollutant Levels</span>
           </h2>
+          <p class="vm-card-explain">Average concentration (&micro;g/m&sup3;) of fine dust and gases (PM2.5, PM10, NO&#8322;, SO&#8322;, O&#8323;, CO) driving local air quality.</p>
           <div class="vm-chart-box">
             <canvas id="vmReportsPollutantChart"></canvas>
           </div>
@@ -153,27 +122,32 @@
       </div>
     </section>
 
-    <!-- Scrollable Section 3: Report Summary & Top Polluted Cities Today -->
+    <!-- Scrollable Section 2: Report Summary & Peak Pollution Hours -->
     <section class="vm-section">
       <div class="vm-two-col">
         <article class="vm-card vm-report-summary-card">
           <div class="vm-section-head" style="margin-bottom:0;">
-            <h2 class="vm-section-title vm-title-with-ico">
-              <span class="vm-head-ico" aria-hidden="true">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-              </span>
-              <span>Report Summary</span>
-            </h2>
+            <div>
+              <h2 class="vm-section-title vm-title-with-ico" style="margin-bottom:3px;">
+                <span class="vm-head-ico" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                </span>
+                <span>Report Summary</span>
+              </h2>
+              <p class="vm-card-explain" style="margin-bottom:0;">Overall air quality digest combining mean AQI, peak &amp; lowest readings, dominant pollutant, and health risk score.</p>
+            </div>
             <span id="repRiskBadge" class="vm-status-tag vm-status-moderate">Risk --</span>
           </div>
 
           <div class="vm-report-summary-body">
             <div id="vmReportsAvgGauge" class="vm-gauge-box"></div>
             <div class="vm-report-metrics-col">
-              <ul class="vm-check-list" style="gap:11px;">
+              <ul class="vm-check-list" style="gap:9px;">
                 <li><span class="vm-check-ico">&check;</span><span><strong>Avg AQI:</strong> <span id="repAvgAqi">--</span></span></li>
                 <li><span class="vm-check-ico">&check;</span><span><strong>Peak / Low:</strong> <span id="repHighAqi">--</span> / <span id="repLowAqi">--</span></span></li>
                 <li><span class="vm-check-ico">&check;</span><span><strong>Net Change:</strong> <span id="repNetChange">--</span></span></li>
+                <li><span class="vm-check-ico">&check;</span><span><strong>Dominant Pollutant:</strong> <span id="repDominantPollutant">--</span></span></li>
+                <li><span class="vm-check-ico">&check;</span><span><strong>Clean / Elevated Hrs:</strong> <span id="repHoursSplit">--</span></span></li>
                 <li><span class="vm-check-ico">&check;</span><span><strong>Risk Score:</strong> <span id="repRiskScore">--</span></span></li>
               </ul>
             </div>
@@ -182,60 +156,79 @@
           <div id="repRiskExplainBox" class="vm-risk-explain-box">
             <strong>Risk Score Guide:</strong> Loading risk score breakdown...
           </div>
+
+          <ul id="repObservationsList" class="vm-report-obs-list">
+            <li>Loading period observations...</li>
+          </ul>
         </article>
 
-        <article class="vm-card">
-          <div class="vm-section-head" style="margin-bottom:12px;">
-            <h2 class="vm-section-title vm-title-with-ico">
-              <span class="vm-head-ico" aria-hidden="true">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        <article class="vm-card" style="display:flex; flex-direction:column; justify-content:space-between; gap:14px;">
+          <div>
+            <h3 class="vm-title-with-ico" style="font-size:1.08rem; margin-bottom:4px;">
+              <span class="vm-head-ico" style="width:22px; height:22px;" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
               </span>
-              <span>Top Polluted Cities Today (India)</span>
-            </h2>
-            <span class="vm-badge-data vm-badge-verified">Live Feed</span>
+              <span>Peak Pollution Hours</span>
+            </h3>
+            <p class="vm-card-explain">Highest hourly AQI intervals recorded during this period to help time outdoor activities safely.</p>
+            <div id="repHotspotsList" style="display:flex; flex-direction:column; gap:8px;">
+              <span class="vm-meta-line">Loading peak hours...</span>
+            </div>
           </div>
-          <div id="repTopCitiesList" style="display:flex; flex-direction:column; gap:8px;">
-            <span class="vm-meta-line">Loading live city rankings...</span>
+          <div class="vm-eco-callout" style="padding:14px 16px; border-radius:16px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <svg width="42" height="42" viewBox="0 0 64 64" fill="none" aria-hidden="true" style="flex-shrink:0;">
+                <circle cx="32" cy="32" r="30" fill="#dcfce7"/>
+                <path d="M22 48V34" stroke="#78350f" stroke-width="3.2" stroke-linecap="round"/>
+                <circle cx="22" cy="27" r="10" fill="#16a34a"/>
+                <path d="M40 48V30" stroke="#78350f" stroke-width="3.5" stroke-linecap="round"/>
+                <circle cx="40" cy="23" r="12" fill="#22c55e"/>
+                <path d="M12 49H52" stroke="#15803d" stroke-width="3" stroke-linecap="round"/>
+              </svg>
+              <div style="flex:1;">
+                <strong style="font-size:0.96rem; display:block; color:var(--vm-ink-primary);">Let's keep our air clean!</strong>
+                <span class="vm-meta-line">Choose low-exposure routes or report local smoke sources.</span>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <a href="routes.html" class="vm-btn vm-btn-primary vm-btn-sm">Clean Routes</a>
+                <a href="community.html" class="vm-btn vm-btn-glass vm-btn-sm">Report Issue</a>
+              </div>
+            </div>
           </div>
         </article>
       </div>
     </section>
 
-    <!-- Scrollable Section 4: Peak Pollution Hours & Eco Callout -->
+    <!-- Scrollable Section 3: Top Polluted Cities & Cleanest Cities Today -->
     <section class="vm-section">
       <div class="vm-two-col">
         <article class="vm-card">
-          <h3 class="vm-title-with-ico" style="font-size:1.05rem; margin-bottom:12px;">
-            <span class="vm-head-ico" style="width:22px; height:22px;" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-            </span>
-            <span>Peak Pollution Hours</span>
-          </h3>
-          <div id="repHotspotsList" style="display:flex; flex-direction:column; gap:8px;">
-            <span class="vm-meta-line">Loading peak hours...</span>
+          <div class="vm-section-head" style="margin-bottom:12px;">
+            <h2 class="vm-section-title vm-title-with-ico">
+              <span class="vm-head-ico" style="color:#dc2626;" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+              </span>
+              <span>Top Polluted Cities Today (India)</span>
+            </h2>
+            <span class="vm-badge-data vm-badge-unverified">Highest AQI</span>
+          </div>
+          <div id="repTopCitiesList" style="display:flex; flex-direction:column; gap:8px;">
+            <span class="vm-meta-line">Loading live city rankings...</span>
           </div>
         </article>
 
-        <article class="vm-card vm-eco-callout">
-          <div style="display:flex; align-items:center; gap:14px;">
-            <svg width="54" height="54" viewBox="0 0 64 64" fill="none" aria-hidden="true" style="flex-shrink:0;">
-              <circle cx="32" cy="32" r="30" fill="#dcfce7"/>
-              <path d="M22 48V34" stroke="#78350f" stroke-width="3.2" stroke-linecap="round"/>
-              <circle cx="22" cy="27" r="10" fill="#16a34a"/>
-              <path d="M40 48V30" stroke="#78350f" stroke-width="3.5" stroke-linecap="round"/>
-              <circle cx="40" cy="23" r="12" fill="#22c55e"/>
-              <path d="M12 49H52" stroke="#15803d" stroke-width="3" stroke-linecap="round"/>
-            </svg>
-            <div>
-              <h3 style="font-size:1.1rem;">Let's keep our air clean!</h3>
-              <p class="vm-section-subtitle" style="margin-top:2px; color:var(--vm-teal-deep);">
-                Reduce emissions, plant more trees, and choose low-exposure routes to help your community breathe cleaner.
-              </p>
-            </div>
+        <article class="vm-card">
+          <div class="vm-section-head" style="margin-bottom:12px;">
+            <h2 class="vm-section-title vm-title-with-ico">
+              <span class="vm-head-ico" style="color:#16a34a;" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path></svg>
+              </span>
+              <span>Cleanest Cities Today (India)</span>
+            </h2>
+            <span class="vm-badge-data vm-badge-verified">Lowest AQI</span>
           </div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;">
-            <a href="routes.html" class="vm-btn vm-btn-primary vm-btn-sm">Clean Routes</a>
-            <a href="community.html" class="vm-btn vm-btn-glass vm-btn-sm">Report Issue</a>
+          <div id="repCleanestCitiesList" style="display:flex; flex-direction:column; gap:8px;">
+            <span class="vm-meta-line">Loading cleanest city rankings...</span>
           </div>
         </article>
       </div>
@@ -251,7 +244,7 @@
         <a href="routes.html">Routes</a>
         <a href="alerts.html">Alerts</a>
         <a href="community.html">Community</a>
-        <a href="profile.html">Profile</a>
+        <a href="profile.html">Settings</a>
       </div>
     </div>
   </footer>

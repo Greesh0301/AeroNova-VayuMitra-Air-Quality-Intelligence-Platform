@@ -1,17 +1,45 @@
 import argparse
 import base64
-from email.parser import BytesParser
-from email.policy import default as email_default_policy
+import email.parser
+import email.policy
 import json
 import mimetypes
 import os
+import re
+import sys
+import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
-from config import Config, FRONTEND_DIR, UPLOAD_FOLDER
-from services import (
-    COMMUNITY_CATEGORIES,
-    REPORT_STATUSES,
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from backend.air_quality import (
+    HttpError,
+    explain_event_replay,
+    generate_event_replay_pdf,
+    get_air_quality_data,
+    get_forecast_data,
+    get_insights_data,
+    get_pollution_event_replay,
+    get_profile_bundle,
+    get_time_machine_data,
+    simulate_what_if,
+)
+from backend.config import Config, FRONTEND_DIR
+from backend.greensteps import (
+    claim_green_reward,
+    complete_green_task,
+    estimate_environmental_impact,
+    get_greensteps_dashboard,
+    review_green_task_submission,
+    start_green_task,
+)
+from backend.india_locations import get_india_locations_directory
+from backend.services import (
     add_exposure_diary_entry,
     add_personal_activity,
     add_personal_location,
@@ -21,888 +49,667 @@ from services import (
     delete_personal_location,
     export_air_twin_csv,
     export_reports_csv,
-    generate_event_replay_pdf,
-    get_air_quality_data,
     get_air_twin_data,
     get_alerts_data,
     get_auth_session,
     get_clean_routes,
     get_community_contribution_summary,
     get_dashboard_data,
-    get_forecast_data,
-    get_india_locations_directory,
-    get_insights_data,
-    get_pollution_event_replay,
-    get_profile_bundle,
     get_reports_data,
-    get_time_machine_data,
-    init_db,
     list_community_reports,
     login_user,
     logout_user,
     register_user,
-    simulate_what_if,
     update_community_report_status,
     update_profile_bundle,
 )
+from backend.store import COMMUNITY_CATEGORIES, REPORT_STATUSES, db
 
-init_db()
+EXTRA_MIME_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".txt": "text/plain; charset=utf-8",
+}
 
 
-def _parse_float(val):
+def _parse_float_opt(val: Any) -> Optional[float]:
     if val is None or val == "":
         return None
     try:
-        return float(val)
-    except ValueError:
+        f = float(val)
+        return f
+    except (TypeError, ValueError):
         return None
 
 
-def _parse_int(val):
+def _parse_int_opt(val: Any) -> Optional[int]:
     if val is None or val == "":
         return None
     try:
-        return int(val)
-    except ValueError:
+        return int(str(val).strip())
+    except (TypeError, ValueError):
         return None
 
 
-def _parse_bool(val):
+def _parse_bool(val: Any) -> bool:
     if val is None:
         return False
     return str(val).strip().lower() in ("1", "true", "yes", "on")
 
 
-def _extract_auth_token_from_headers(headers) -> str:
-    auth_hdr = headers.get("Authorization") or ""
+def _parse_multipart(content_type: str, body: bytes) -> Tuple[Dict[str, str], Dict[str, Tuple[bytes, Optional[str]]]]:
+    fields: Dict[str, str] = {}
+    files: Dict[str, Tuple[bytes, Optional[str]]] = {}
+    if not body:
+        return fields, files
+    header_block = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("latin-1")
+    msg = email.parser.BytesParser(policy=email.policy.default).parsebytes(header_block + body)
+    if not msg.is_multipart():
+        return fields, files
+    for part in msg.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        if not name:
+            continue
+        filename = part.get_filename()
+        payload = part.get_payload(decode=True) or b""
+        if filename is not None:
+            if len(payload) > Config.MAX_UPLOAD_BYTES:
+                raise HttpError(413, "Uploaded photo exceeds the 5 MB size limit.")
+            files[name] = (payload, filename)
+        else:
+            charset = part.get_content_charset() or "utf-8"
+            fields[name] = payload.decode(charset, errors="replace")
+    return fields, files
+
+
+def _decode_base64_field(raw: Any) -> bytes:
+    b64_str = str(raw or "").split(",")[-1].strip()
+    if not b64_str:
+        return b""
+    try:
+        return base64.b64decode(b64_str)
+    except Exception as exc:
+        raise HttpError(400, "Invalid base64 image payload.") from exc
+
+
+def _extract_auth_token(headers_get) -> str:
+    auth_hdr = str(headers_get("Authorization") or "")
     if auth_hdr.lower().startswith("bearer "):
         return auth_hdr[7:].strip()
-    x_tok = headers.get("X-Auth-Token") or ""
-    if x_tok:
-        return x_tok.strip()
-    return ""
+    return str(headers_get("X-Auth-Token") or "").strip()
 
 
-def create_flask_app():
-    from flask import Flask, Response, jsonify, request, send_from_directory
-    from flask_cors import CORS
+def _dispatch_api(
+    method: str,
+    path: str,
+    query: Dict[str, str],
+    json_body: Dict[str, Any],
+    form_fields: Dict[str, str],
+    files: Dict[str, Tuple[bytes, Optional[str]]],
+    is_multipart: bool,
+    auth_token: str,
+) -> Tuple[int, Any, Dict[str, str]]:
+    """Dispatch an API or /uploads request and return (status, payload_or_bytes, headers)."""
+    if method == "GET" and path.startswith("/uploads/"):
+        fname = os.path.basename(urllib.parse.unquote(path[len("/uploads/"):]))
+        with db.lock:
+            item = db.uploads.get(fname)
+        if not item:
+            return 404, {"error": "File not found."}, {}
+        return 200, item["data"], {"Content-Type": item["mime_type"], "X-Content-Type-Options": "nosniff"}
 
-    app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
-    app.config.from_object(Config)
-    app.config["MAX_CONTENT_LENGTH"] = Config.MAX_UPLOAD_BYTES
-    CORS(app)
+    if method == "GET" and path == "/api/dashboard":
+        data = get_dashboard_data(
+            city=query.get("city"),
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+        )
+        return 200, data, {}
 
-    @app.route("/")
-    def serve_index():
-        return send_from_directory(FRONTEND_DIR, "index.html")
+    if method == "GET" and path == "/api/locations/india":
+        return 200, get_india_locations_directory(), {}
 
-    @app.route("/<path:filename>")
-    def serve_frontend(filename):
-        target = os.path.join(FRONTEND_DIR, filename)
-        if os.path.isfile(target):
-            return send_from_directory(FRONTEND_DIR, filename)
-        return send_from_directory(FRONTEND_DIR, "index.html")
+    if method == "GET" and path == "/api/air-quality":
+        data = get_air_quality_data(
+            city=query.get("city"),
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+        )
+        return 200, data, {}
 
-    @app.route("/uploads/<path:filename>")
-    def serve_upload(filename):
-        return send_from_directory(UPLOAD_FOLDER, filename)
+    if method == "GET" and path == "/api/air-quality/forecast":
+        data = get_forecast_data(
+            city=query.get("city"),
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+        )
+        return 200, data, {}
 
-    @app.route("/api/dashboard", methods=["GET"])
-    def api_dashboard():
-        try:
-            city = request.args.get("city")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            return jsonify(get_dashboard_data(city=city, lat=lat, lon=lon))
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Live air quality data unavailable: {exc}"}), 502
+    if method == "GET" and path == "/api/air-quality/history":
+        data = get_reports_data(
+            city=query.get("city"),
+            period=query.get("period") or "daily",
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+            start_date=query.get("start_date"),
+            end_date=query.get("end_date"),
+        )
+        return 200, data, {}
 
-    @app.route("/api/locations/india", methods=["GET"])
-    def api_india_locations():
-        return jsonify(get_india_locations_directory())
+    if method == "GET" and path == "/api/insights":
+        data = get_insights_data(
+            city=query.get("city"),
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+        )
+        return 200, data, {}
 
-    @app.route("/api/air-quality", methods=["GET"])
-    def api_air_quality():
-        try:
-            city = request.args.get("city")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            return jsonify(get_air_quality_data(city=city, lat=lat, lon=lon))
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Air quality service unavailable: {exc}"}), 502
+    if method == "GET" and path == "/api/insights/time-machine":
+        data = get_time_machine_data(
+            city=query.get("city"),
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+            target_date=query.get("target_date"),
+            compare_date=query.get("compare_date"),
+            start_date=query.get("start_date"),
+            end_date=query.get("end_date"),
+            period=query.get("period"),
+            time_slot=query.get("time_slot"),
+        )
+        return 200, data, {}
 
-    @app.route("/api/air-quality/forecast", methods=["GET"])
-    def api_forecast():
-        try:
-            city = request.args.get("city")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            return jsonify(get_forecast_data(city=city, lat=lat, lon=lon))
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Forecast service unavailable: {exc}"}), 502
+    if method == "GET" and path == "/api/insights/event-replay":
+        data = get_pollution_event_replay(
+            city=query.get("city"),
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+            start_date=query.get("start_date"),
+            end_date=query.get("end_date"),
+            pollutant=query.get("pollutant") or "pm2_5",
+            threshold_pct=_parse_float_opt(query.get("threshold_pct")) or 35.0,
+            baseline_method=query.get("baseline_method") or "median",
+            window_hours=_parse_int_opt(query.get("window_hours")) or 12,
+            case_id=_parse_int_opt(query.get("case_id")),
+        )
+        return 200, data, {}
 
-    @app.route("/api/air-quality/history", methods=["GET"])
-    def api_history():
-        try:
-            city = request.args.get("city")
-            period = request.args.get("period", "daily")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            start_date = request.args.get("start_date")
-            end_date = request.args.get("end_date")
-            return jsonify(get_reports_data(city=city, period=period, lat=lat, lon=lon, start_date=start_date, end_date=end_date))
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Historical data unavailable: {exc}"}), 502
+    if method == "POST" and path == "/api/insights/event-replay/explain":
+        explanation = explain_event_replay(json_body or {})
+        return 200, {"explanation": explanation}, {}
 
-    @app.route("/api/insights", methods=["GET"])
-    def api_insights():
-        try:
-            city = request.args.get("city")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            return jsonify(get_insights_data(city=city, lat=lat, lon=lon))
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Insights service unavailable: {exc}"}), 502
+    if method == "POST" and path == "/api/insights/event-replay/pdf":
+        filename, pdf_bytes = generate_event_replay_pdf(json_body or {})
+        return (
+            200,
+            pdf_bytes,
+            {
+                "Content-Type": "application/pdf",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
 
-    @app.route("/api/insights/time-machine", methods=["GET"])
-    def api_time_machine():
-        try:
-            city = request.args.get("city")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            target_date = request.args.get("target_date")
-            compare_date = request.args.get("compare_date")
-            return jsonify(get_time_machine_data(city=city, lat=lat, lon=lon, target_date=target_date, compare_date=compare_date))
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Time Machine archive unavailable: {exc}"}), 502
+    if method == "POST" and path == "/api/insights/simulate":
+        body = json_body or {}
+        result = simulate_what_if(
+            city=body.get("city"),
+            lat=_parse_float_opt(body.get("lat")),
+            lon=_parse_float_opt(body.get("lon")),
+            traffic_reduction_pct=float(body.get("traffic_reduction_pct") or 0),
+            dust_control_pct=float(body.get("dust_control_pct") or 0),
+            greenery_increase_pct=float(body.get("greenery_increase_pct") or 0),
+            burning_reduction_pct=float(body.get("burning_reduction_pct") or 0),
+            industrial_reduction_pct=float(body.get("industrial_reduction_pct") or 0),
+        )
+        return 200, result, {}
 
-    @app.route("/api/insights/event-replay", methods=["GET"])
-    def api_event_replay():
-        try:
-            city = request.args.get("city")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            start_date = request.args.get("start_date")
-            end_date = request.args.get("end_date")
-            pollutant = request.args.get("pollutant", "pm2_5")
-            threshold_pct = _parse_float(request.args.get("threshold_pct")) or 35.0
-            return jsonify(
-                get_pollution_event_replay(
-                    city=city,
-                    lat=lat,
-                    lon=lon,
-                    start_date=start_date,
-                    end_date=end_date,
-                    pollutant=pollutant,
-                    threshold_pct=threshold_pct,
-                )
-            )
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Pollution Event Replay unavailable: {exc}"}), 502
+    if method == "GET" and path == "/api/routes":
+        data = get_clean_routes(
+            origin=str(query.get("origin") or ""),
+            destination=str(query.get("destination") or ""),
+            mode=str(query.get("mode") or "walking"),
+            escape_mode=_parse_bool(query.get("escape_mode")),
+        )
+        return 200, data, {}
 
-    @app.route("/api/insights/event-replay/pdf", methods=["POST"])
-    def api_event_replay_pdf():
-        try:
-            data = request.get_json(silent=True) or {}
-            fname, pdf_bytes = generate_event_replay_pdf(data)
-            return Response(
-                pdf_bytes,
-                mimetype="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-            )
-        except Exception as exc:
-            return jsonify({"error": f"PDF generation failed: {exc}"}), 500
+    if method == "GET" and path == "/api/alerts":
+        data = get_alerts_data(
+            city=query.get("city"),
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+        )
+        return 200, data, {}
 
-    @app.route("/api/insights/simulate", methods=["POST"])
-    def api_simulate():
-        try:
-            data = request.get_json(silent=True) or {}
-            res = simulate_what_if(
-                city=data.get("city"),
-                lat=_parse_float(data.get("lat")),
-                lon=_parse_float(data.get("lon")),
-                traffic_reduction_pct=float(data.get("traffic_reduction_pct", 0)),
-                dust_control_pct=float(data.get("dust_control_pct", 0)),
-                greenery_increase_pct=float(data.get("greenery_increase_pct", 0)),
-                burning_reduction_pct=float(data.get("burning_reduction_pct", 0)),
-                industrial_reduction_pct=float(data.get("industrial_reduction_pct", 0)),
-            )
-            return jsonify(res)
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Simulation failed: {exc}"}), 502
+    if method == "GET" and path == "/api/reports":
+        data = get_reports_data(
+            city=query.get("city"),
+            period=query.get("period") or "daily",
+            lat=_parse_float_opt(query.get("lat")),
+            lon=_parse_float_opt(query.get("lon")),
+            start_date=query.get("start_date"),
+            end_date=query.get("end_date"),
+        )
+        return 200, data, {}
 
-    @app.route("/api/routes", methods=["GET"])
-    def api_routes():
-        try:
-            origin = request.args.get("origin", "")
-            destination = request.args.get("destination", "")
-            mode = request.args.get("mode", "walking")
-            escape_mode = _parse_bool(request.args.get("escape_mode"))
-            return jsonify(get_clean_routes(origin=origin, destination=destination, mode=mode, escape_mode=escape_mode))
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Route planner unavailable: {exc}"}), 502
+    if method == "GET" and path == "/api/reports/export":
+        filename, csv_text = export_reports_csv(
+            city=query.get("city"),
+            period=query.get("period") or "daily",
+            start_date=query.get("start_date"),
+            end_date=query.get("end_date"),
+        )
+        return (
+            200,
+            csv_text.encode("utf-8"),
+            {
+                "Content-Type": "text/csv; charset=utf-8",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
 
-    @app.route("/api/alerts", methods=["GET"])
-    def api_alerts():
-        try:
-            city = request.args.get("city")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            return jsonify(get_alerts_data(city=city, lat=lat, lon=lon))
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Alerts service unavailable: {exc}"}), 502
-
-    @app.route("/api/reports", methods=["GET"])
-    def api_reports():
-        try:
-            city = request.args.get("city")
-            period = request.args.get("period", "daily")
-            lat = _parse_float(request.args.get("lat"))
-            lon = _parse_float(request.args.get("lon"))
-            start_date = request.args.get("start_date")
-            end_date = request.args.get("end_date")
-            compare_city = request.args.get("compare_city")
-            return jsonify(get_reports_data(city=city, period=period, lat=lat, lon=lon, start_date=start_date, end_date=end_date, compare_city=compare_city))
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except Exception as exc:
-            return jsonify({"error": f"Reports unavailable: {exc}"}), 502
-
-    @app.route("/api/reports/export", methods=["GET"])
-    def api_reports_export():
-        try:
-            city = request.args.get("city")
-            period = request.args.get("period", "daily")
-            start_date = request.args.get("start_date")
-            end_date = request.args.get("end_date")
-            filename, csv_text = export_reports_csv(city=city, period=period, start_date=start_date, end_date=end_date)
-            return Response(
-                csv_text,
-                mimetype="text/csv",
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-            )
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except Exception as exc:
-            return jsonify({"error": f"Export failed: {exc}"}), 502
-
-    @app.route("/api/community/reports", methods=["GET"])
-    def api_community_reports():
-        status = request.args.get("status")
-        category = request.args.get("category")
-        search = request.args.get("search")
-        return jsonify(
+    if method == "GET" and path == "/api/community/reports":
+        return (
+            200,
             {
                 "categories": COMMUNITY_CATEGORIES,
                 "statuses": REPORT_STATUSES,
                 "contribution_summary": get_community_contribution_summary(),
-                "reports": list_community_reports(status=status, category=category, search=search),
-            }
+                "reports": list_community_reports(
+                    status=query.get("status"),
+                    category=query.get("category"),
+                    search=query.get("search"),
+                ),
+            },
+            {},
         )
 
-    @app.route("/api/community/report", methods=["POST"])
-    def api_community_report():
-        try:
-            if request.content_type and "multipart/form-data" in request.content_type:
-                title = request.form.get("title", "")
-                description = request.form.get("description", "")
-                category = request.form.get("category", "")
-                location_name = request.form.get("location_name", "")
-                lat = _parse_float(request.form.get("latitude"))
-                lon = _parse_float(request.form.get("longitude"))
-                photo = request.files.get("photo")
-                file_bytes = photo.read() if photo and photo.filename else None
-                orig_name = photo.filename if photo and photo.filename else None
-            else:
-                data = request.get_json(silent=True) or {}
-                title = data.get("title", "")
-                description = data.get("description", "")
-                category = data.get("category", "")
-                location_name = data.get("location_name", "")
-                lat = _parse_float(data.get("latitude"))
-                lon = _parse_float(data.get("longitude"))
-                file_bytes = None
-                orig_name = data.get("photo_name")
-                if data.get("photo_base64"):
-                    b64_str = data["photo_base64"].split(",")[-1]
-                    file_bytes = base64.b64decode(b64_str)
+    if method == "POST" and path == "/api/community/report":
+        body: Dict[str, Any] = form_fields if is_multipart else (json_body or {})
+        file_bytes: Optional[bytes] = None
+        orig_name: Optional[str] = None
+        if is_multipart and "photo" in files:
+            file_bytes, orig_name = files["photo"]
+        elif not is_multipart and body.get("photo_base64"):
+            file_bytes = _decode_base64_field(body.get("photo_base64"))
+            orig_name = body.get("photo_name")
+        created = create_community_report(
+            title=str(body.get("title") or ""),
+            description=str(body.get("description") or ""),
+            category=str(body.get("category") or ""),
+            location_name=str(body.get("location_name") or ""),
+            latitude=_parse_float_opt(body.get("latitude")),
+            longitude=_parse_float_opt(body.get("longitude")),
+            file_bytes=file_bytes,
+            original_filename=orig_name,
+            auth_token=auth_token,
+        )
+        return 201, {"message": "Community report submitted successfully.", "report": created}, {}
 
-            created = create_community_report(
-                title=title,
-                description=description,
-                category=category,
-                location_name=location_name,
-                latitude=lat,
-                longitude=lon,
-                file_bytes=file_bytes,
-                original_filename=orig_name,
-            )
-            return jsonify({"message": "Community report submitted successfully.", "report": created}), 201
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except Exception as exc:
-            return jsonify({"error": f"Unable to save report: {exc}"}), 500
+    m_rep_status = re.fullmatch(r"/api/community/reports/(\d+)/status", path)
+    if m_rep_status and method in ("PUT", "PATCH"):
+        report_id = int(m_rep_status.group(1))
+        updated = update_community_report_status(report_id, str((json_body or {}).get("status") or ""))
+        return 200, {"report": updated}, {}
 
-    @app.route("/api/community/reports/<int:report_id>/status", methods=["PUT", "PATCH"])
-    def api_community_report_status(report_id):
-        try:
-            data = request.get_json(silent=True) or {}
-            updated = update_community_report_status(report_id, data.get("status", ""))
-            return jsonify({"report": updated})
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
+    if method == "GET" and path == "/api/greensteps":
+        return 200, get_greensteps_dashboard(auth_token), {}
 
-    @app.route("/api/auth/login", methods=["POST"])
-    def api_auth_login():
-        try:
-            data = request.get_json(silent=True) or {}
-            res = login_user(data.get("email", ""), data.get("password", ""))
-            return jsonify(res)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 401
-        except Exception as exc:
-            return jsonify({"error": f"Login failed: {exc}"}), 500
+    m_gs_start = re.fullmatch(r"/api/greensteps/tasks/(\d+)/start", path)
+    if m_gs_start and method == "POST":
+        return 200, start_green_task(int(m_gs_start.group(1)), auth_token), {}
 
-    @app.route("/api/auth/register", methods=["POST"])
-    def api_auth_register():
-        try:
-            data = request.get_json(silent=True) or {}
-            res = register_user(
-                data.get("name", ""),
-                data.get("email", ""),
-                data.get("password", ""),
-                data.get("preferred_city", "Mumbai"),
-            )
-            return jsonify(res), 201
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except Exception as exc:
-            return jsonify({"error": f"Registration failed: {exc}"}), 500
+    m_gs_complete = re.fullmatch(r"/api/greensteps/tasks/(\d+)/complete", path)
+    if m_gs_complete and method == "POST":
+        task_id = int(m_gs_complete.group(1))
+        body = form_fields if is_multipart else (json_body or {})
+        file_bytes = None
+        orig_name = None
+        if is_multipart and "proof" in files:
+            file_bytes, orig_name = files["proof"]
+        elif not is_multipart and body.get("proof_base64"):
+            file_bytes = _decode_base64_field(body.get("proof_base64"))
+            orig_name = body.get("proof_name")
+        result = complete_green_task(
+            task_id=task_id,
+            declaration=str(body.get("declaration") or ""),
+            file_bytes=file_bytes,
+            original_filename=orig_name,
+            auth_token=auth_token,
+        )
+        return 200, result, {}
 
-    @app.route("/api/auth/logout", methods=["POST"])
-    def api_auth_logout():
-        token = _extract_auth_token_from_headers(request.headers)
-        return jsonify(logout_user(token))
+    m_gs_claim = re.fullmatch(r"/api/greensteps/rewards/([^/]+)/claim", path)
+    if m_gs_claim and method == "POST":
+        code = urllib.parse.unquote(m_gs_claim.group(1))
+        return 200, claim_green_reward(code, auth_token), {}
 
-    @app.route("/api/auth/me", methods=["GET"])
-    def api_auth_me():
-        token = _extract_auth_token_from_headers(request.headers)
-        return jsonify(get_auth_session(token))
+    if method == "POST" and path == "/api/greensteps/estimate":
+        body = json_body or {}
+        result = estimate_environmental_impact(
+            activity=str(body.get("activity") or "walking_vs_car"),
+            quantity=float(body.get("quantity") if body.get("quantity") is not None else 3),
+            frequency=str(body.get("frequency") or "daily"),
+        )
+        return 200, result, {}
 
-    @app.route("/api/profile", methods=["GET", "PUT"])
-    def api_profile():
-        token = _extract_auth_token_from_headers(request.headers)
-        if request.method == "GET":
-            return jsonify(get_profile_bundle(auth_token=token))
-        try:
-            data = request.get_json(silent=True) or {}
-            updated = update_profile_bundle(data, auth_token=token)
-            return jsonify({"message": "Settings saved successfully.", **updated})
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except Exception as exc:
-            return jsonify({"error": f"Failed to update settings: {exc}"}), 500
+    m_gs_review = re.fullmatch(r"/api/greensteps/admin/submissions/(\d+)/review", path)
+    if m_gs_review and method == "POST":
+        body = json_body or {}
+        result = review_green_task_submission(
+            submission_id=int(m_gs_review.group(1)),
+            decision=str(body.get("decision") or ""),
+            notes=str(body.get("notes") or ""),
+            auth_token=auth_token,
+        )
+        return 200, result, {}
 
-    @app.route("/api/air-twin", methods=["GET"])
-    def api_air_twin():
-        try:
-            token = _extract_auth_token_from_headers(request.headers)
-            return jsonify(get_air_twin_data(include_live=True, auth_token=token))
-        except Exception as exc:
-            return jsonify({"error": f"Air Twin service error: {exc}"}), 502
+    if method == "POST" and path == "/api/auth/login":
+        body = json_body or {}
+        return 200, login_user(str(body.get("email") or ""), str(body.get("password") or "")), {}
 
-    @app.route("/api/air-twin/locations", methods=["POST"])
-    def api_air_twin_add_location():
-        try:
-            token = _extract_auth_token_from_headers(request.headers)
-            data = request.get_json(silent=True) or {}
-            created = add_personal_location(
-                data.get("label", ""),
-                data.get("city", ""),
-                hours_per_day=float(data.get("hours_per_day", 8.0) or 8.0),
-                auth_token=token,
-            )
-            return jsonify({"message": "Frequent location added.", "location": created}), 201
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
+    if method == "POST" and path == "/api/auth/register":
+        body = json_body or {}
+        result = register_user(
+            str(body.get("name") or ""),
+            str(body.get("email") or ""),
+            str(body.get("password") or ""),
+            str(body.get("preferred_city") or "Mumbai"),
+        )
+        return 201, result, {}
 
-    @app.route("/api/air-twin/locations/<int:loc_id>", methods=["DELETE"])
-    def api_air_twin_del_location(loc_id):
-        try:
-            delete_personal_location(loc_id)
-            return jsonify({"message": "Location removed."})
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
+    if method == "POST" and path == "/api/auth/logout":
+        return 200, logout_user(auth_token), {}
 
-    @app.route("/api/air-twin/activities", methods=["POST"])
-    def api_air_twin_add_activity():
-        try:
-            token = _extract_auth_token_from_headers(request.headers)
-            data = request.get_json(silent=True) or {}
-            created = add_personal_activity(
-                activity_type=data.get("activity_type", ""),
-                location_id=_parse_int(data.get("location_id")),
-                hours_per_day=float(data.get("hours_per_day", 1)),
-                intensity=data.get("intensity", "Moderate"),
-                is_outdoor=bool(data.get("is_outdoor", True)),
-                auth_token=token,
-            )
-            return jsonify({"message": "Daily activity logged.", "activity": created}), 201
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+    if method == "GET" and path == "/api/auth/me":
+        return 200, get_auth_session(auth_token), {}
 
-    @app.route("/api/air-twin/activities/<int:act_id>", methods=["DELETE"])
-    def api_air_twin_del_activity(act_id):
-        try:
-            delete_personal_activity(act_id)
-            return jsonify({"message": "Activity removed."})
-        except LookupError as exc:
-            return jsonify({"error": str(exc)}), 404
+    if method == "GET" and path == "/api/profile":
+        return 200, get_profile_bundle(auth_token), {}
 
-    @app.route("/api/air-twin/diary", methods=["POST"])
-    def api_air_twin_add_diary():
-        try:
-            token = _extract_auth_token_from_headers(request.headers)
-            data = request.get_json(silent=True) or {}
-            entry = add_exposure_diary_entry(notes=data.get("notes", ""), entry_date=data.get("entry_date"), auth_token=token)
-            return jsonify({"message": "Exposure diary snapshot logged.", "entry": entry}), 201
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 400
+    if method == "PUT" and path == "/api/profile":
+        updated = update_profile_bundle(json_body or {}, auth_token)
+        return 200, {"message": "Settings saved successfully.", **updated}, {}
 
-    @app.route("/api/air-twin/export", methods=["GET"])
-    def api_air_twin_export():
-        try:
-            fname, csv_text = export_air_twin_csv()
-            return Response(
-                csv_text,
-                mimetype="text/csv",
-                headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-            )
-        except Exception as exc:
-            return jsonify({"error": f"Export failed: {exc}"}), 500
+    if method == "GET" and path == "/api/air-twin":
+        return 200, get_air_twin_data(True, auth_token), {}
 
-    @app.route("/api/contact", methods=["POST"])
-    def api_contact():
-        try:
-            data = request.get_json(silent=True) or {}
-            saved = create_contact_message(
-                name=data.get("name", ""),
-                email=data.get("email", ""),
-                subject=data.get("subject", "General Feedback"),
-                message=data.get("message", ""),
-            )
-            return jsonify({"message": "Thank you for contacting VayuMitra.", "ticket": saved}), 201
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+    if method == "POST" and path == "/api/air-twin/locations":
+        body = json_body or {}
+        created = add_personal_location(
+            str(body.get("label") or ""),
+            str(body.get("city") or ""),
+            float(body.get("hours_per_day") or 8.0),
+            auth_token,
+        )
+        return 201, {"message": "Frequent location added.", "location": created}, {}
 
-    return app
+    m_twin_loc = re.fullmatch(r"/api/air-twin/locations/(\d+)", path)
+    if m_twin_loc and method == "DELETE":
+        delete_personal_location(int(m_twin_loc.group(1)))
+        return 200, {"message": "Location removed."}, {}
+
+    if method == "POST" and path == "/api/air-twin/activities":
+        body = json_body or {}
+        created = add_personal_activity(
+            activity_type=str(body.get("activity_type") or ""),
+            location_id=_parse_int_opt(body.get("location_id")),
+            hours_per_day=float(body.get("hours_per_day") if body.get("hours_per_day") is not None else 1),
+            intensity=str(body.get("intensity") or "Moderate"),
+            is_outdoor=bool(body["is_outdoor"]) if "is_outdoor" in body and body["is_outdoor"] is not None else True,
+            auth_token=auth_token,
+        )
+        return 201, {"message": "Daily activity logged.", "activity": created}, {}
+
+    m_twin_act = re.fullmatch(r"/api/air-twin/activities/(\d+)", path)
+    if m_twin_act and method == "DELETE":
+        delete_personal_activity(int(m_twin_act.group(1)))
+        return 200, {"message": "Activity removed."}, {}
+
+    if method == "POST" and path == "/api/air-twin/diary":
+        body = json_body or {}
+        entry = add_exposure_diary_entry(
+            str(body.get("notes") or ""),
+            body.get("entry_date"),
+            auth_token,
+        )
+        return 201, {"message": "Exposure diary snapshot logged.", "entry": entry}, {}
+
+    if method == "GET" and path == "/api/air-twin/export":
+        filename, csv_text = export_air_twin_csv(auth_token)
+        return (
+            200,
+            csv_text.encode("utf-8"),
+            {
+                "Content-Type": "text/csv; charset=utf-8",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    if method == "POST" and path == "/api/contact":
+        body = json_body or {}
+        saved = create_contact_message(
+            name=str(body.get("name") or ""),
+            email=str(body.get("email") or ""),
+            subject=str(body.get("subject") or "General Feedback"),
+            message=str(body.get("message") or ""),
+        )
+        return 201, {"message": "Thank you for contacting VayuMitra.", "ticket": saved}, {}
+
+    return 404, {"error": "Endpoint not found."}, {}
 
 
-def run_stdlib_server(host: str, port: int):
-    """Pure-Python stdlib HTTP server fallback when Flask is not installed in the host environment."""
+class VayuMitraHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
 
-    class VayuMitraHandler(BaseHTTPRequestHandler):
-        def log_message(self, format, *args):
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
+    def _send_json(self, status: int, data: Any, extra_headers: Optional[Dict[str, str]] = None) -> None:
+        raw = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        if extra_headers:
+            for k, v in extra_headers.items():
+                self.send_header(k, v)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+
+    def _send_bytes(self, status: int, raw: bytes, headers: Dict[str, str]) -> None:
+        self.send_response(status)
+        for k, v in headers.items():
+            self.send_header(k, v)
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+
+    def _serve_static(self, req_path: str) -> None:
+        rel = "index.html" if req_path == "/" else req_path.lstrip("/")
+        frontend_root = FRONTEND_DIR.resolve()
+        candidate = (frontend_root / rel).resolve()
+        if str(candidate).startswith(str(frontend_root)) and candidate.is_file():
+            target = candidate
+        else:
+            target = frontend_root / "index.html"
+        data = target.read_bytes()
+        ext = target.suffix.lower()
+        ctype = EXTRA_MIME_TYPES.get(ext) or mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        self._send_bytes(200, data, {"Content-Type": ctype})
+
+    def _handle_request(self, method: str) -> None:
+        parsed = urllib.parse.urlsplit(self.path)
+        req_path = urllib.parse.unquote(parsed.path or "/")
+        query_pairs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        query = {k: v[0] for k, v in query_pairs.items() if v}
+
+        if method in ("GET", "HEAD") and not req_path.startswith("/api/") and not req_path.startswith("/uploads/"):
+            try:
+                self._serve_static(req_path)
+            except Exception as exc:
+                self._send_json(500, {"error": f"Failed to serve static asset: {exc}"})
             return
 
-        def _send_json(self, status_code: int, payload):
-            body = json.dumps(payload).encode("utf-8")
-            try:
-                self.send_response(status_code)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(body)
-            except BrokenPipeError:
-                pass
+        content_len = int(self.headers.get("Content-Length") or "0")
+        if content_len > 10 * 1024 * 1024:
+            self._send_json(413, {"error": "Request payload too large (limit 10 MB)."})
+            return
 
-        def _send_bytes(self, status_code: int, content_type: str, data: bytes, extra_headers=None):
-            try:
-                self.send_response(status_code)
-                self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(len(data)))
-                if extra_headers:
-                    for k, v in extra_headers.items():
-                        self.send_header(k, v)
-                self.end_headers()
-                self.wfile.write(data)
-            except BrokenPipeError:
-                pass
+        raw_body = self.rfile.read(content_len) if content_len > 0 else b""
+        content_type = str(self.headers.get("Content-Type") or "")
+        is_multipart = "multipart/form-data" in content_type.lower()
 
-        def _read_body(self) -> bytes:
-            length = int(self.headers.get("Content-Length", "0"))
-            return self.rfile.read(length) if length > 0 else b""
+        json_body: Dict[str, Any] = {}
+        form_fields: Dict[str, str] = {}
+        files: Dict[str, Tuple[bytes, Optional[str]]] = {}
 
-        @staticmethod
-        def _parse_multipart(ctype: str, raw: bytes):
-            header_bytes = f"Content-Type: {ctype}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
-            msg = BytesParser(policy=email_default_policy).parsebytes(header_bytes + raw)
-            fields = {}
-            files = {}
-            if msg.is_multipart():
-                for part in msg.iter_parts():
-                    name = part.get_param("name", header="content-disposition")
-                    if not name:
-                        continue
-                    filename = part.get_filename()
-                    payload = part.get_payload(decode=True) or b""
-                    if filename:
-                        files[name] = (filename, payload)
-                    else:
-                        fields[name] = payload.decode("utf-8", errors="replace")
-            return fields, files
+        try:
+            if is_multipart:
+                form_fields, files = _parse_multipart(content_type, raw_body)
+            elif raw_body:
+                try:
+                    loaded = json.loads(raw_body.decode("utf-8"))
+                    if isinstance(loaded, dict):
+                        json_body = loaded
+                except Exception:
+                    json_body = {}
 
-        def do_GET(self):
-            parsed = urllib.parse.urlparse(self.path)
-            path = parsed.path
-            qs = urllib.parse.parse_qs(parsed.query)
-            q = lambda key, default=None: qs.get(key, [default])[0]
+            status, payload, headers = _dispatch_api(
+                method=method,
+                path=req_path,
+                query=query,
+                json_body=json_body,
+                form_fields=form_fields,
+                files=files,
+                is_multipart=is_multipart,
+                auth_token=_extract_auth_token(self.headers.get),
+            )
+            if isinstance(payload, (bytes, bytearray)):
+                self._send_bytes(status, bytes(payload), headers)
+            else:
+                self._send_json(status, payload, headers)
+        except HttpError as err:
+            self._send_json(err.status, {"error": err.message})
+        except Exception as err:
+            traceback.print_exc()
+            self._send_json(502, {"error": str(err) or "Internal server error."})
 
-            try:
-                if path == "/api/dashboard":
-                    return self._send_json(200, get_dashboard_data(q("city"), _parse_float(q("lat")), _parse_float(q("lon"))))
-                if path == "/api/locations/india":
-                    return self._send_json(200, get_india_locations_directory())
-                if path == "/api/air-quality":
-                    return self._send_json(200, get_air_quality_data(q("city"), _parse_float(q("lat")), _parse_float(q("lon"))))
-                if path == "/api/air-quality/forecast":
-                    return self._send_json(200, get_forecast_data(q("city"), _parse_float(q("lat")), _parse_float(q("lon"))))
-                if path == "/api/air-quality/history":
-                    return self._send_json(
-                        200,
-                        get_reports_data(
-                            q("city"),
-                            q("period", "daily"),
-                            _parse_float(q("lat")),
-                            _parse_float(q("lon")),
-                            q("start_date"),
-                            q("end_date"),
-                        ),
-                    )
-                if path == "/api/insights":
-                    return self._send_json(200, get_insights_data(q("city"), _parse_float(q("lat")), _parse_float(q("lon"))))
-                if path == "/api/insights/time-machine":
-                    return self._send_json(
-                        200,
-                        get_time_machine_data(
-                            q("city"),
-                            _parse_float(q("lat")),
-                            _parse_float(q("lon")),
-                            q("target_date"),
-                            q("compare_date"),
-                        ),
-                    )
-                if path == "/api/insights/event-replay":
-                    return self._send_json(
-                        200,
-                        get_pollution_event_replay(
-                            q("city"),
-                            _parse_float(q("lat")),
-                            _parse_float(q("lon")),
-                            q("start_date"),
-                            q("end_date"),
-                            q("pollutant", "pm2_5"),
-                            _parse_float(q("threshold_pct")) or 35.0,
-                        ),
-                    )
-                if path == "/api/routes":
-                    return self._send_json(
-                        200,
-                        get_clean_routes(
-                            q("origin", ""),
-                            q("destination", ""),
-                            q("mode", "walking"),
-                            _parse_bool(q("escape_mode")),
-                        ),
-                    )
-                if path == "/api/alerts":
-                    return self._send_json(200, get_alerts_data(q("city"), _parse_float(q("lat")), _parse_float(q("lon"))))
-                if path == "/api/reports":
-                    return self._send_json(
-                        200,
-                        get_reports_data(
-                            q("city"),
-                            q("period", "daily"),
-                            _parse_float(q("lat")),
-                            _parse_float(q("lon")),
-                            q("start_date"),
-                            q("end_date"),
-                            q("compare_city"),
-                        ),
-                    )
-                if path == "/api/reports/export":
-                    fname, csv_text = export_reports_csv(q("city"), q("period", "daily"), q("start_date"), q("end_date"))
-                    return self._send_bytes(
-                        200,
-                        "text/csv; charset=utf-8",
-                        csv_text.encode("utf-8"),
-                        {"Content-Disposition": f'attachment; filename="{fname}"'},
-                    )
-                if path == "/api/community/reports":
-                    return self._send_json(
-                        200,
-                        {
-                            "categories": COMMUNITY_CATEGORIES,
-                            "statuses": REPORT_STATUSES,
-                            "contribution_summary": get_community_contribution_summary(),
-                            "reports": list_community_reports(q("status"), q("category"), q("search")),
-                        },
-                    )
-                if path == "/api/auth/me":
-                    tok = _extract_auth_token_from_headers(self.headers)
-                    return self._send_json(200, get_auth_session(tok))
-                if path == "/api/profile":
-                    tok = _extract_auth_token_from_headers(self.headers)
-                    return self._send_json(200, get_profile_bundle(auth_token=tok))
-                if path == "/api/air-twin":
-                    tok = _extract_auth_token_from_headers(self.headers)
-                    return self._send_json(200, get_air_twin_data(include_live=True, auth_token=tok))
-                if path == "/api/air-twin/export":
-                    fname, csv_text = export_air_twin_csv()
-                    return self._send_bytes(
-                        200,
-                        "text/csv; charset=utf-8",
-                        csv_text.encode("utf-8"),
-                        {"Content-Disposition": f'attachment; filename="{fname}"'},
-                    )
+    def do_GET(self) -> None:
+        self._handle_request("GET")
 
-                if path.startswith("/uploads/"):
-                    fname = os.path.basename(path[len("/uploads/"):])
-                    fpath = os.path.join(UPLOAD_FOLDER, fname)
-                    if os.path.isfile(fpath):
-                        ctype = mimetypes.guess_type(fpath)[0] or "application/octet-stream"
-                        with open(fpath, "rb") as fh:
-                            return self._send_bytes(200, ctype, fh.read())
-                    return self._send_json(404, {"error": "File not found."})
+    def do_HEAD(self) -> None:
+        self._handle_request("HEAD")
 
-                rel = "index.html" if path in ("", "/") else path.lstrip("/")
-                fpath = os.path.normpath(os.path.join(FRONTEND_DIR, rel))
-                if not fpath.startswith(os.path.abspath(FRONTEND_DIR)) or not os.path.isfile(fpath):
-                    fpath = os.path.join(FRONTEND_DIR, "index.html")
-                ctype = mimetypes.guess_type(fpath)[0] or "text/html; charset=utf-8"
-                with open(fpath, "rb") as fh:
-                    return self._send_bytes(200, ctype, fh.read())
-            except ValueError as exc:
-                return self._send_json(400, {"error": str(exc)})
-            except LookupError as exc:
-                return self._send_json(404, {"error": str(exc)})
-            except Exception as exc:
-                return self._send_json(502, {"error": str(exc)})
+    def do_POST(self) -> None:
+        self._handle_request("POST")
 
-        def do_POST(self):
-            path = urllib.parse.urlparse(self.path).path
-            try:
-                if path == "/api/insights/simulate":
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    res = simulate_what_if(
-                        city=data.get("city"),
-                        lat=_parse_float(data.get("lat")),
-                        lon=_parse_float(data.get("lon")),
-                        traffic_reduction_pct=float(data.get("traffic_reduction_pct", 0)),
-                        dust_control_pct=float(data.get("dust_control_pct", 0)),
-                        greenery_increase_pct=float(data.get("greenery_increase_pct", 0)),
-                        burning_reduction_pct=float(data.get("burning_reduction_pct", 0)),
-                        industrial_reduction_pct=float(data.get("industrial_reduction_pct", 0)),
-                    )
-                    return self._send_json(200, res)
+    def do_PUT(self) -> None:
+        self._handle_request("PUT")
 
-                if path == "/api/insights/event-replay/pdf":
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    fname, pdf_bytes = generate_event_replay_pdf(data)
-                    return self._send_bytes(
-                        200,
-                        "application/pdf",
-                        pdf_bytes,
-                        {"Content-Disposition": f'attachment; filename="{fname}"'},
-                    )
+    def do_PATCH(self) -> None:
+        self._handle_request("PATCH")
 
-                if path == "/api/auth/login":
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    try:
-                        return self._send_json(200, login_user(data.get("email", ""), data.get("password", "")))
-                    except ValueError as exc:
-                        return self._send_json(401, {"error": str(exc)})
+    def do_DELETE(self) -> None:
+        self._handle_request("DELETE")
 
-                if path == "/api/auth/register":
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    return self._send_json(
-                        201,
-                        register_user(
-                            data.get("name", ""),
-                            data.get("email", ""),
-                            data.get("password", ""),
-                            data.get("preferred_city", "Mumbai"),
-                        ),
-                    )
 
-                if path == "/api/auth/logout":
-                    tok = _extract_auth_token_from_headers(self.headers)
-                    return self._send_json(200, logout_user(tok))
+def _try_run_flask(host: str, port: int) -> bool:
+    try:
+        from flask import Flask, Response, jsonify, request, send_from_directory
+    except ImportError:
+        return False
 
-                if path == "/api/air-twin/locations":
-                    tok = _extract_auth_token_from_headers(self.headers)
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    created = add_personal_location(
-                        data.get("label", ""),
-                        data.get("city", ""),
-                        hours_per_day=float(data.get("hours_per_day", 8.0) or 8.0),
-                        auth_token=tok,
-                    )
-                    return self._send_json(201, {"message": "Frequent location added.", "location": created})
+    app = Flask(__name__, static_folder=None)
+    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
-                if path == "/api/air-twin/activities":
-                    tok = _extract_auth_token_from_headers(self.headers)
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    created = add_personal_activity(
-                        activity_type=data.get("activity_type", ""),
-                        location_id=_parse_int(data.get("location_id")),
-                        hours_per_day=float(data.get("hours_per_day", 1)),
-                        intensity=data.get("intensity", "Moderate"),
-                        is_outdoor=bool(data.get("is_outdoor", True)),
-                        auth_token=tok,
-                    )
-                    return self._send_json(201, {"message": "Daily activity logged.", "activity": created})
+    @app.route("/uploads/<path:filename>", methods=["GET"])
+    def serve_upload(filename: str):
+        status, payload, headers = _dispatch_api("GET", f"/uploads/{filename}", {}, {}, {}, {}, False, "")
+        if isinstance(payload, (bytes, bytearray)):
+            return Response(bytes(payload), status=status, headers=headers)
+        return jsonify(payload), status
 
-                if path == "/api/air-twin/diary":
-                    tok = _extract_auth_token_from_headers(self.headers)
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    entry = add_exposure_diary_entry(notes=data.get("notes", ""), entry_date=data.get("entry_date"), auth_token=tok)
-                    return self._send_json(201, {"message": "Exposure diary snapshot logged.", "entry": entry})
+    @app.route("/api/<path:subpath>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    def handle_api(subpath: str):
+        ctype = request.content_type or ""
+        is_multi = "multipart/form-data" in ctype.lower()
+        fields: Dict[str, str] = {}
+        files: Dict[str, Tuple[bytes, Optional[str]]] = {}
+        jbody: Dict[str, Any] = {}
+        if is_multi:
+            fields = {k: v for k, v in request.form.items()}
+            for fkey, fobj in request.files.items():
+                raw = fobj.read()
+                if len(raw) > Config.MAX_UPLOAD_BYTES:
+                    return jsonify({"error": "Uploaded photo exceeds the 5 MB size limit."}), 413
+                files[fkey] = (raw, fobj.filename)
+        else:
+            jbody = request.get_json(silent=True) or {}
 
-                if path == "/api/community/report":
-                    ctype = self.headers.get("Content-Type", "")
-                    raw = self._read_body()
-                    if len(raw) > Config.MAX_UPLOAD_BYTES + 65536:
-                        return self._send_json(413, {"error": "Payload exceeds maximum upload limit (5 MB)."})
-                    if "multipart/form-data" in ctype:
-                        fields, files = self._parse_multipart(ctype, raw)
-                        title = fields.get("title", "")
-                        desc = fields.get("description", "")
-                        cat = fields.get("category", "")
-                        loc = fields.get("location_name", "")
-                        lat = _parse_float(fields.get("latitude"))
-                        lon = _parse_float(fields.get("longitude"))
-                        file_bytes = None
-                        orig_name = None
-                        if "photo" in files:
-                            orig_name, file_bytes = files["photo"]
-                    else:
-                        data = json.loads(raw.decode("utf-8") or "{}")
-                        title = data.get("title", "")
-                        desc = data.get("description", "")
-                        cat = data.get("category", "")
-                        loc = data.get("location_name", "")
-                        lat = _parse_float(data.get("latitude"))
-                        lon = _parse_float(data.get("longitude"))
-                        file_bytes = None
-                        orig_name = data.get("photo_name")
-                        if data.get("photo_base64"):
-                            file_bytes = base64.b64decode(data["photo_base64"].split(",")[-1])
+        query = {k: v for k, v in request.args.items()}
+        try:
+            status, payload, headers = _dispatch_api(
+                method=request.method,
+                path=f"/api/{subpath}",
+                query=query,
+                json_body=jbody,
+                form_fields=fields,
+                files=files,
+                is_multipart=is_multi,
+                auth_token=_extract_auth_token(request.headers.get),
+            )
+            if isinstance(payload, (bytes, bytearray)):
+                return Response(bytes(payload), status=status, headers=headers)
+            resp = jsonify(payload)
+            for hk, hv in headers.items():
+                resp.headers[hk] = hv
+            return resp, status
+        except HttpError as err:
+            return jsonify({"error": err.message}), err.status
+        except Exception as err:
+            traceback.print_exc()
+            return jsonify({"error": str(err) or "Internal server error."}), 502
 
-                    created = create_community_report(title, desc, cat, loc, lat, lon, file_bytes, orig_name)
-                    return self._send_json(201, {"message": "Community report submitted successfully.", "report": created})
+    @app.route("/", defaults={"req_path": ""})
+    @app.route("/<path:req_path>")
+    def serve_frontend(req_path: str):
+        rel = req_path or "index.html"
+        target = (FRONTEND_DIR / rel).resolve()
+        if str(target).startswith(str(FRONTEND_DIR.resolve())) and target.is_file():
+            return send_from_directory(str(FRONTEND_DIR), rel)
+        return send_from_directory(str(FRONTEND_DIR), "index.html")
 
-                if path == "/api/contact":
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                    saved = create_contact_message(data.get("name", ""), data.get("email", ""), data.get("subject", "General Feedback"), data.get("message", ""))
-                    return self._send_json(201, {"message": "Thank you for contacting VayuMitra.", "ticket": saved})
+    print(f"VayuMitra Flask server listening on http://{host}:{port}", flush=True)
+    app.run(host=host, port=port, threaded=True, use_reloader=False)
+    return True
 
-                return self._send_json(404, {"error": "Endpoint not found."})
-            except ValueError as exc:
-                return self._send_json(400, {"error": str(exc)})
-            except LookupError as exc:
-                return self._send_json(404, {"error": str(exc)})
-            except Exception as exc:
-                return self._send_json(500, {"error": str(exc)})
 
-        def do_DELETE(self):
-            path = urllib.parse.urlparse(self.path).path
-            try:
-                if path.startswith("/api/air-twin/locations/"):
-                    lid = int(path.strip("/").split("/")[-1])
-                    delete_personal_location(lid)
-                    return self._send_json(200, {"message": "Location removed."})
-                if path.startswith("/api/air-twin/activities/"):
-                    aid = int(path.strip("/").split("/")[-1])
-                    delete_personal_activity(aid)
-                    return self._send_json(200, {"message": "Activity removed."})
-                return self._send_json(404, {"error": "Endpoint not found."})
-            except LookupError as exc:
-                return self._send_json(404, {"error": str(exc)})
-            except Exception as exc:
-                return self._send_json(500, {"error": str(exc)})
+def main() -> None:
+    parser = argparse.ArgumentParser(description="VayuMitra Python Web Server")
+    parser.add_argument("--host", default=Config.HOST, help="Bind host address")
+    parser.add_argument("--port", type=int, default=Config.PORT, help="Bind port number")
+    parser.add_argument("--stdlib", action="store_true", help="Force built-in Python stdlib HTTP server")
+    args = parser.parse_args()
 
-        def do_PUT(self):
-            self._handle_update()
+    if not args.stdlib and _try_run_flask(args.host, args.port):
+        return
 
-        def do_PATCH(self):
-            self._handle_update()
-
-        def _handle_update(self):
-            path = urllib.parse.urlparse(self.path).path
-            try:
-                data = json.loads(self._read_body().decode("utf-8") or "{}")
-                if path == "/api/profile":
-                    tok = _extract_auth_token_from_headers(self.headers)
-                    return self._send_json(200, {"message": "Settings saved successfully.", **update_profile_bundle(data, auth_token=tok)})
-                if path.startswith("/api/community/reports/") and path.endswith("/status"):
-                    parts = path.strip("/").split("/")
-                    rid = int(parts[3])
-                    return self._send_json(200, {"report": update_community_report_status(rid, data.get("status", ""))})
-                return self._send_json(404, {"error": "Endpoint not found."})
-            except ValueError as exc:
-                return self._send_json(400, {"error": str(exc)})
-            except LookupError as exc:
-                return self._send_json(404, {"error": str(exc)})
-            except Exception as exc:
-                return self._send_json(500, {"error": str(exc)})
-
-    server = ThreadingHTTPServer((host, port), VayuMitraHandler)
-    print(f"VayuMitra stdlib backend listening on http://{host}:{port}")
-    server.serve_forever()
+    server = ThreadingHTTPServer((args.host, args.port), VayuMitraHandler)
+    print(f"VayuMitra Python server listening on http://{args.host}:{args.port}", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="VayuMitra Environmental Platform Server")
-    parser.add_argument("--host", default=Config.HOST)
-    parser.add_argument("--port", type=int, default=Config.PORT)
-    parser.add_argument("--stdlib", action="store_true", help="Run built-in Python stdlib HTTP mode")
-    args = parser.parse_args()
-
-    if args.stdlib:
-        run_stdlib_server(args.host, args.port)
-    else:
-        try:
-            flask_app = create_flask_app()
-            flask_app.run(host=args.host, port=args.port, debug=Config.DEBUG)
-        except ImportError:
-            run_stdlib_server(args.host, args.port)
+    main()

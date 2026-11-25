@@ -2,13 +2,13 @@
 
 @media (max-width: 1220px) {
   .vm-nav-links {
-    gap: 10px;
+    gap: 8px;
   }
   .vm-nav-link {
-    font-size: 0.8rem;
+    font-size: 0.77rem;
   }
   .vm-nav-search-box input {
-    width: 118px;
+    width: 110px;
   }
   .vm-stats-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -44,6 +44,32 @@
   .vm-sim-split {
     grid-template-columns: 1fr;
   }
+  .vm-dash-scroll-1 {
+    min-height: calc(100vh - 80px);
+    min-height: calc(100svh - 80px);
+    padding: 24px 0 36px;
+    justify-content: center;
+  }
+  .vm-dash-hero-strip {
+    padding: 8px 0;
+    align-items: flex-start;
+  }
+  .vm-dash-unified-card.vm-dash-card {
+    min-height: auto;
+    padding: 20px;
+  }
+  .vm-dash-unified-body,
+  .vm-dash-bento-mid,
+  .vm-dash-bento-bottom {
+    grid-template-columns: 1fr;
+  }
+  .vm-dash-unified-right {
+    border-left: none;
+    border-top: 1px solid var(--vm-border-hairline);
+    padding-left: 0;
+    padding-top: 16px;
+    height: auto;
+  }
   .vm-sim-right-panel {
     padding-left: 0;
     border-left: none;
@@ -69,7 +95,18 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .vm-hero-stat-tiles {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vm-gs-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vm-gs-tasks-grid,
+  .vm-gs-certs-grid,
+  .vm-gs-badges-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vm-gs-impact-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -91,6 +128,18 @@
   .vm-gauge-split,
   .vm-report-summary-body {
     grid-template-columns: 1fr;
+  }
+  .vm-dash-unified-card.vm-dash-card {
+    padding: 16px;
+  }
+  .vm-dash-gauge-char-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .vm-prow {
+    grid-template-columns: 46px 1fr 84px;
+    gap: 8px;
+    font-size: 0.84rem;
   }
   .vm-pollutant-bars-col,
   .vm-report-metrics-col {
@@ -180,4 +229,120 @@
   .vm-auth-card {
     padding: 22px 18px;
   }
+  .vm-gs-kpi-grid,
+  .vm-gs-kpi-grid-4,
+  .vm-gs-tasks-grid,
+  .vm-gs-certs-grid,
+  .vm-gs-badges-grid,
+  .vm-gs-impact-stats,
+  .vm-gs-impact-stats-2,
+  .vm-gs-estimator-inputs,
+  .vm-gs-est-results {
+    grid-template-columns: 1fr;
+  }
+  .vm-gs-weekly-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .vm-gs-admin-item {
+    grid-template-columns: 1fr;
+  }
+  .vm-gs-admin-controls {
+    min-width: 0;
+    width: 100%;
+  }
+  .vm-gs-bento-grid,
+  .vm-gs-challenge-hero,
+  .vm-gs-impact-main,
+  .vm-gs-compact-grid,
+  .vm-gs-medals-grid,
+  .vm-gs-impact-explain-grid,
+  .vm-gs-impact-breakdown-list,
+  .vm-alert-aqi-meta-grid,
+  .vm-emergency-contacts-grid {
+    grid-template-columns: 1fr;
+  }
+  .vm-gs-proof-row {
+    flex-wrap: wrap;
+  }
+  .vm-gs-split-body,
+  .vm-gs-progress-split {
+    grid-template-columns: 1fr;
+  }
+  .vm-gs-divider {
+    width: 100%;
+    height: 1px;
+  }
+  .vm-gs-impact-main {
+    justify-items: center;
+    text-align: center;
+  }
+  .vm-gs-impact-metric {
+    align-items: center;
+  }
 }
+
+@media (max-width: 980px) {
+  .vm-gs-bento-grid,
+  .vm-gs-compact-grid,
+  .vm-gs-impact-explain-grid,
+  .vm-ins-two-col {
+    grid-template-columns: 1fr;
+  }
+  .vm-hist-controls,
+  .vm-er-compact-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .vm-ins-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vm-ins-spikes-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .vm-hist-controls,
+  .vm-er-compact-bar {
+    grid-template-columns: 1fr;
+  }
+  .vm-ins-kpi-strip,
+  .vm-ins-pol-grid,
+  .vm-sim-cards-grid-5,
+  .vm-er-reports-grid {
+    grid-template-columns: 1fr;
+  }
+  .vm-er-report-card,
+  .vm-er-case-card {
+    flex-direction: column;
+  }
+  .vm-er-report-photo,
+  .vm-er-case-photo {
+    width: 100%;
+    height: 140px;
+  }
+  .vm-fp-subline {
+    padding-left: 0;
+    flex-wrap: wrap;
+  }
+  .vm-ins-map {
+    height: 250px;
+  }
+  .vm-jump-tabs {
+    gap: 6px;
+  }
+  .vm-jump-pill {
+    font-size: 0.8rem;
+    padding: 7px 12px;
+  }
+  .vm-replay-playback-bar {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .vm-replay-playback-btns {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+
+

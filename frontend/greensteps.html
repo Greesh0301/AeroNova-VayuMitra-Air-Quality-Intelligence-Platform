@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Green Steps &ndash; Sustainable Action Tracker &ndash; VayuMitra</title>
+  <meta name="description" content="Green Steps Sustainable Action Tracker: daily green challenges, points and rewards, personal streak and weekly progress tracker, and CO2 emissions avoided." />
+  <link rel="icon" type="image/svg+xml" href="assets/icons/logo-leaf.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/pages.css" />
+  <link rel="stylesheet" href="css/responsive.css" />
+</head>
+<body data-page="greensteps" class="vm-subpage">
+  <div class="vm-bg-stage" aria-hidden="true">
+    <div class="vm-bg-image"></div>
+    <div class="vm-water-shimmer"></div>
+    <div class="vm-leaf-layer">
+      <div class="vm-leaf vm-leaf-1"><svg viewBox="0 0 32 20" fill="none"><path d="M2 12C8 3 21 1 30 6C23 15 12 18 2 12Z" fill="#4ADE80"/><path d="M2 12C11 10 20 8 29 6" stroke="#15803D" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+      <div class="vm-leaf vm-leaf-2"><svg viewBox="0 0 32 20" fill="none"><path d="M2 12C8 3 21 1 30 6C23 15 12 18 2 12Z" fill="#22C55E"/><path d="M2 12C11 10 20 8 29 6" stroke="#166534" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+      <div class="vm-leaf vm-leaf-3"><svg viewBox="0 0 32 20" fill="none"><path d="M2 12C8 3 21 1 30 6C23 15 12 18 2 12Z" fill="#86EFAC"/><path d="M2 12C11 10 20 8 29 6" stroke="#15803D" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+      <div class="vm-leaf vm-leaf-4"><svg viewBox="0 0 32 20" fill="none"><path d="M2 12C8 3 21 1 30 6C23 15 12 18 2 12Z" fill="#4ADE80"/><path d="M2 12C11 10 20 8 29 6" stroke="#166534" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+      <div class="vm-leaf vm-leaf-5"><svg viewBox="0 0 32 20" fill="none"><path d="M2 12C8 3 21 1 30 6C23 15 12 18 2 12Z" fill="#22C55E"/><path d="M2 12C11 10 20 8 29 6" stroke="#15803D" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+    </div>
+  </div>
+  <div class="vm-bg-scrim" aria-hidden="true"></div>
+
+  <header class="vm-header-wrap">
+    <nav class="vm-navbar" aria-label="Primary Navigation">
+      <a href="index.html" class="vm-brand">
+        <img src="assets/icons/logo-leaf.svg" alt="VayuMitra logo" class="vm-brand-icon" />
+        <span class="vm-brand-text">VayuMitra</span>
+      </a>
+      <div class="vm-nav-links">
+        <a href="index.html" class="vm-nav-link">Home</a>
+        <a href="insights.html" class="vm-nav-link">Insights</a>
+        <a href="routes.html" class="vm-nav-link">Routes</a>
+        <a href="alerts.html" class="vm-nav-link">Alerts</a>
+        <a href="reports.html" class="vm-nav-link">Reports</a>
+        <a href="community.html" class="vm-nav-link">Community</a>
+        <a href="greensteps.html" class="vm-nav-link active">GreenSteps</a>
+        <a href="profile.html" class="vm-nav-link">Settings</a>
+      </div>
+      <form id="vmNavSearchForm" class="vm-nav-search" role="search" aria-label="Search city air quality">
+        <div class="vm-nav-search-box">
+          <input id="vmNavSearchInput" type="search" placeholder="Search Indian city..." aria-label="Search Indian state or city" />
+          <button type="submit" class="vm-nav-search-btn" aria-label="Search city">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </button>
+        </div>
+      </form>
+      <button id="vmMobileToggle" class="vm-mobile-toggle" type="button" aria-label="Toggle navigation menu" aria-expanded="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+    </nav>
+    <div id="vmMobileMenu" class="vm-mobile-menu">
+      <a href="index.html" class="vm-nav-link">Home</a>
+      <a href="insights.html" class="vm-nav-link">Insights</a>
+      <a href="routes.html" class="vm-nav-link">Routes</a>
+      <a href="alerts.html" class="vm-nav-link">Alerts</a>
+      <a href="reports.html" class="vm-nav-link">Reports</a>
+      <a href="community.html" class="vm-nav-link">Community</a>
+      <a href="greensteps.html" class="vm-nav-link active">GreenSteps</a>
+      <a href="profile.html" class="vm-nav-link">Settings</a>
+    </div>
+  </header>
+
+  <main class="vm-container">
+    <section class="vm-page-header" style="padding:18px 0 8px;">
+      <div class="vm-page-header-inner">
+        <div>
+          <h1 class="vm-page-title" style="font-size:clamp(1.6rem,2.6vw,2.15rem);">Green Steps</h1>
+          <p class="vm-section-subtitle" style="margin-top:2px;">Track your progress, earn achievement medals &amp; rewards, complete 8 daily eco-tasks, and see your CO<sub>2</sub> impact.</p>
+        </div>
+        <div class="vm-gs-header-actions">
+          <span id="vmGsRoleBadge" class="vm-badge-data vm-badge-verified">Active Tracker</span>
+        </div>
+      </div>
+    </section>
+
+    <div id="vmGsBanner" class="vm-banner vm-hidden" style="margin-bottom:10px;"></div>
+
+    <!-- TOP SECTION: Your Progress + Points, Achievements & Rewards -->
+    <section class="vm-section" style="padding-top:4px; padding-bottom:16px;">
+      <div class="vm-gs-bento-grid" style="gap:16px;">
+        <!-- Your Progress -->
+        <article class="vm-card vm-gs-bento-card vm-gs-card-progress" style="padding:18px 20px; gap:12px;">
+          <div class="vm-gs-bento-head">
+            <div class="vm-gs-bento-head-left" style="gap:10px;">
+              <div class="vm-gs-circle-ico" style="width:42px; height:42px;" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <rect x="4" y="13" width="4" height="7" rx="1" fill="#ffffff"/>
+                  <rect x="10" y="9" width="4" height="11" rx="1" fill="#ffffff"/>
+                  <rect x="16" y="4" width="4" height="16" rx="1" fill="#ffffff"/>
+                </svg>
+              </div>
+              <div>
+                <h2 class="vm-gs-bento-title" style="font-size:1.15rem;">Your Progress</h2>
+                <p class="vm-gs-bento-sub" style="font-size:0.84rem;">Daily streak &amp; weekly activity goal</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="vm-gs-split-body vm-gs-progress-split" style="padding:0;">
+            <div class="vm-gs-ring-col">
+              <div class="vm-gs-ring-wrap" style="width:108px; height:108px;">
+                <svg class="vm-gs-ring-svg" viewBox="0 0 120 120" width="108" height="108" aria-hidden="true">
+                  <circle cx="60" cy="60" r="46" fill="none" stroke="#e2e8f0" stroke-width="13"/>
+                  <circle id="gsProgressRingArc" cx="60" cy="60" r="46" fill="none" stroke="#16a34a" stroke-width="13" stroke-linecap="round" stroke-dasharray="289.03" stroke-dashoffset="180.64" transform="rotate(-90 60 60)"/>
+                </svg>
+                <div id="gsProgressPct" class="vm-gs-ring-pct" style="font-size:1.45rem;">38%</div>
+              </div>
+              <div class="vm-gs-ring-label" style="font-size:0.86rem;">Weekly Goal</div>
+            </div>
+
+            <div class="vm-gs-divider" style="height:98px;" aria-hidden="true"></div>
+
+            <div class="vm-gs-stats-col" style="gap:7px;">
+              <div class="vm-gs-stat-line" style="font-size:0.9rem;">
+                <span class="vm-gs-stat-dot vm-gs-dot-check" aria-hidden="true">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </span>
+                <strong id="gsChallengesRatio">3 / 8</strong>
+                <span>Challenges</span>
+              </div>
+
+              <div class="vm-gs-stat-line" style="font-size:0.9rem;">
+                <span class="vm-gs-stat-dot vm-gs-dot-flame" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#f97316"><path d="M12 2C12 2 17 7.5 17 13A5 5 0 0 1 7 13C7 10 9 7.5 10 6.5C10 8.5 11.5 9.5 12 9.5C11.5 7 12 2 12 2Z"/></svg>
+                </span>
+                <strong id="gsStreakDays">3</strong>
+                <span>Day Streak</span>
+              </div>
+
+              <div class="vm-gs-stat-line" style="font-size:0.9rem;">
+                <span class="vm-gs-stat-dot vm-gs-dot-leaf" aria-hidden="true">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="#16a34a"><path d="M5 18C5 10 11 5 19 5C19 13 14 19 7 19C6 19 5.3 18.7 5 18Z"/></svg>
+                </span>
+                <strong id="gsProgressPoints">120</strong>
+                <span>Total Points</span>
+              </div>
+
+              <div id="vmGsSparklineWrap" class="vm-gs-sparkline-wrap" style="height:40px;" aria-label="7-day progress trend"></div>
+            </div>
+          </div>
+
+          <div class="vm-gs-leaderboard-wrap" style="margin-top:4px;">
+            <div class="vm-gs-leaderboard-head">
+              <span>Community Leaderboard</span>
+              <span id="vmGsNextLevelHint" class="vm-meta-line" style="font-size:0.76rem;">--</span>
+            </div>
+            <div id="vmGsLeaderboardList" class="vm-gs-leaderboard-list">
+              <span class="vm-meta-line">Loading leaderboard...</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Points, Achievements & Medals, and Rewards -->
+        <article class="vm-card vm-gs-bento-card vm-gs-card-points" style="padding:18px 20px; gap:12px;">
+          <div class="vm-gs-bento-head">
+            <div class="vm-gs-bento-head-left" style="gap:10px;">
+              <div class="vm-gs-circle-ico" style="width:42px; height:42px;" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <path d="M7 4H17V10C17 12.8 14.8 15 12 15C9.2 15 7 12.8 7 10V4Z" fill="#facc15" stroke="#fde047" stroke-width="1.2"/>
+                  <path d="M7 6H4.5C4.5 9 5.5 10.5 7 10.5" stroke="#fde047" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M17 6H19.5C19.5 9 18.5 10.5 17 10.5" stroke="#fde047" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M12 15V19M9 19H15" stroke="#fde047" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div>
+                <h2 class="vm-gs-bento-title" style="font-size:1.15rem;">Points, Achievements &amp; Rewards</h2>
+                <p class="vm-gs-bento-sub" style="font-size:0.84rem;">Unlock achievement medals &amp; claim Green Rewards</p>
+              </div>
+            </div>
+            <div class="vm-gs-mini-medal-pill">
+              <strong id="gsTotalPoints" class="tabular-nums" style="color:#0d5c2e; font-size:1.1rem;">120 pts</strong>
+              <span>&middot;</span>
+              <span id="gsBadgeTitle" style="font-weight:700; color:#92400e;">Eco Warrior</span>
+            </div>
+          </div>
+
+          <div class="vm-gs-subblock">
+            <div class="vm-gs-leaderboard-head">
+              <span>Achievements &amp; Medals</span>
+              <span id="vmGsMedalsSummary" class="vm-meta-line" style="font-size:0.76rem;">-- earned</span>
+            </div>
+            <div id="vmGsMedalsGrid" class="vm-gs-medals-grid">
+              <span class="vm-meta-line">Loading medals...</span>
+            </div>
+          </div>
+
+          <div class="vm-gs-subblock">
+            <div class="vm-gs-leaderboard-head">
+              <span>Unlockable Rewards</span>
+              <span class="vm-meta-line" style="font-size:0.76rem;">Claim as you level up</span>
+            </div>
+            <div id="vmGsRewardsList" class="vm-gs-rewards-row">
+              <span class="vm-meta-line">Loading rewards...</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- MIDDLE SECTION: 8 Daily Green Challenges -->
+    <section class="vm-section" style="padding-top:4px; padding-bottom:18px;">
+      <div class="vm-section-head" style="margin-bottom:12px;">
+        <div>
+          <h2 class="vm-section-title" style="font-size:1.28rem;">Daily Green Challenges (8 Tasks)</h2>
+          <p class="vm-section-subtitle" style="margin-top:2px;">Write an optional note or attach a photo if you want, then click Complete Task to earn points.</p>
+        </div>
+        <div class="vm-gs-header-actions">
+          <select id="vmGsCategoryFilter" class="vm-gs-filter-select" aria-label="Filter challenges">
+            <option value="">All Challenges</option>
+            <option value="Active Travel">Active Travel</option>
+            <option value="Clean Mobility">Clean Mobility</option>
+            <option value="Energy">Energy</option>
+            <option value="Greenery">Greenery</option>
+            <option value="Zero Waste">Zero Waste</option>
+          </select>
+          <select id="vmGsDifficultyFilter" class="vm-gs-filter-select" aria-label="Filter by difficulty">
+            <option value="">All Difficulties</option>
+            <option value="Easy">Easy</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="vmGsChallengesGrid" class="vm-gs-compact-grid">
+        <article class="vm-card">Loading daily green challenges...</article>
+      </div>
+    </section>
+
+    <!-- BOTTOM SECTION: Explainable Environmental Impact -->
+    <section class="vm-section" style="padding-top:4px; padding-bottom:22px;">
+      <article class="vm-card vm-gs-bento-card vm-gs-card-impact" style="padding:18px 22px; gap:12px;">
+        <div class="vm-gs-impact-explain-grid">
+          <div class="vm-gs-impact-left">
+            <div class="vm-gs-bento-head-left" style="gap:10px; margin-bottom:6px;">
+              <div class="vm-gs-circle-ico vm-gs-co2-ico" style="width:40px; height:40px;" aria-hidden="true">
+                <span style="font-size:0.86rem;">CO<sub>2</sub></span>
+              </div>
+              <div>
+                <h2 class="vm-gs-bento-title" style="font-size:1.14rem;">Environmental Impact</h2>
+                <p class="vm-gs-bento-sub" style="font-size:0.82rem;">How your everyday actions help cleaner air &amp; health</p>
+              </div>
+            </div>
+
+            <div class="vm-gs-impact-main" style="padding:2px 0; gap:14px;">
+              <div class="vm-gs-cloud-wrap" aria-hidden="true">
+                <svg width="112" height="70" viewBox="0 0 146 92" fill="none">
+                  <path d="M36 78H112C126 78 136 68 136 55C136 43 127 33 115 32C110 17 95 8 79 10C65 11 53 21 49 34C46 33 42 32 38 32C24 32 14 42 14 55C14 68 23 78 36 78Z" fill="#22a542"/>
+                  <path d="M26 78H106C118 78 126 70 126 59C126 49 118 41 108 40C103 28 91 21 78 22C66 23 56 32 53 43C50 42 47 41 44 41C32 41 24 49 24 60C24 70 25 78 26 78Z" fill="#4ade80" fill-opacity="0.35"/>
+                  <text x="74" y="57" text-anchor="middle" fill="#ffffff" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="25">CO</text>
+                  <text x="99" y="61" text-anchor="middle" fill="#ffffff" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="14">2</text>
+                </svg>
+              </div>
+              <div class="vm-gs-impact-metric">
+                <div id="gsTotalCo2Saved" class="vm-gs-co2-value" style="font-size:2.2rem;">~ 5.8 kg</div>
+                <div class="vm-gs-co2-label" style="font-size:0.95rem;">
+                  <span>CO<sub>2</sub> Avoided</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="vm-gs-impact-callout" style="padding:8px 14px; font-size:0.88rem; justify-content:flex-start;">
+              <svg width="20" height="24" viewBox="0 0 28 32" fill="none" aria-hidden="true">
+                <rect x="12" y="20" width="4" height="10" rx="1.5" fill="#78350f"/>
+                <circle cx="14" cy="13" r="9.5" fill="#16a34a"/>
+                <circle cx="10" cy="14" r="5.5" fill="#22c55e"/>
+              </svg>
+              <span id="gsTreeEquivText">That's like planting 3 small trees!</span>
+            </div>
+          </div>
+
+          <div class="vm-gs-impact-right">
+            <div class="vm-gs-impact-formula-box">
+              <strong>Why It Is Useful:</strong>
+              <span id="gsImpactFormulaText">Loading environmental benefits...</span>
+            </div>
+            <div id="gsImpactBreakdownList" class="vm-gs-impact-breakdown-list">
+              <span class="vm-meta-line">Loading how each action helps...</span>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="vm-footer">
+    <div class="vm-container vm-footer-inner">
+      <span>VayuMitra &ndash; Beyond Air Quality Monitoring.</span>
+      <div class="vm-footer-links">
+        <a href="index.html">Home</a>
+        <a href="insights.html">Insights</a>
+        <a href="routes.html">Routes</a>
+        <a href="alerts.html">Alerts</a>
+        <a href="reports.html">Reports</a>
+        <a href="community.html">Community</a>
+        <a href="greensteps.html">GreenSteps</a>
+        <a href="profile.html">Settings</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="javascript/api.js"></script>
+  <script src="javascript/main.js"></script>
+  <script src="javascript/features.js"></script>
+</body>
+</html>

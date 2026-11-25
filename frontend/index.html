@@ -43,7 +43,7 @@
         <a href="alerts.html" class="vm-nav-link">Alerts</a>
         <a href="reports.html" class="vm-nav-link">Reports</a>
         <a href="community.html" class="vm-nav-link">Community</a>
-        <a href="profile.html" class="vm-nav-link">Profile</a>
+        <a href="profile.html" class="vm-nav-link">Settings</a>
       </div>
 
       <form id="vmNavSearchForm" class="vm-nav-search" role="search" aria-label="Search city air quality">
@@ -74,163 +74,191 @@
       <a href="alerts.html" class="vm-nav-link">Alerts</a>
       <a href="reports.html" class="vm-nav-link">Reports</a>
       <a href="community.html" class="vm-nav-link">Community</a>
-      <a href="profile.html" class="vm-nav-link">Profile</a>
+      <a href="profile.html" class="vm-nav-link">Settings</a>
     </div>
   </header>
 
-  <main class="vm-container">
-    <!-- Hero Section over Moving City Background -->
-    <section class="vm-hero">
-      <div class="vm-hero-content">
-        <p class="vm-hero-eyebrow">VayuMitra &middot; Breathe Better. Live Healthier.</p>
-        <h1 id="vmTimeGreeting" class="vm-hero-title">Good morning!</h1>
-        <p class="vm-hero-desc">
-          Cleaner air, healthier tomorrow.
+  <main class="vm-container vm-dash-container">
+    <div id="vmDashboardBanner" class="vm-banner vm-hidden" style="margin-top:14px;" role="status"></div>
+
+    <!-- SCROLL 1: Greetings & Quick Actions Only -->
+    <section id="live-aqi-section" class="vm-section vm-dash-scroll-1">
+      <div class="vm-dash-hero-strip">
+        <p class="vm-dash-eyebrow">VayuMitra &middot; Breathe Better. Live Healthier.</p>
+        <h1 id="vmTimeGreeting" class="vm-dash-title">Good morning!</h1>
+        <p class="vm-dash-tagline">Cleaner air, healthier tomorrow.</p>
+        <p class="vm-dash-sub">
+          <strong id="vmHeroLocation">Mumbai</strong> &middot; <span id="vmHeroDate">Today</span>
         </p>
 
-        <div class="vm-hero-meta">
-          <span id="vmHeroLocation">Mumbai</span>
-          <span aria-hidden="true">&middot;</span>
-          <span id="vmHeroDate">Today</span>
-        </div>
-
-        <div class="vm-hero-actions">
-          <a href="#live-aqi-section" class="vm-btn vm-btn-primary">View Air Quality Dashboard &darr;</a>
+        <div class="vm-dash-actions-col">
+          <a href="#dashboard-features" class="vm-btn vm-btn-primary">View Air Quality Dashboard &darr;</a>
           <a href="insights.html" class="vm-btn vm-btn-glass">Insights &rarr;</a>
-          <button id="vmUseLocationBtn" type="button" class="vm-btn vm-btn-glass">Use my location</button>
+          <button id="vmUseLocationBtn" type="button" class="vm-btn vm-btn-glass">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            <span>Use my location</span>
+          </button>
         </div>
       </div>
     </section>
 
-    <div id="vmDashboardBanner" class="vm-banner vm-hidden" role="status"></div>
+    <!-- SCROLL 2: Unified AQI & Pollutants Card + AQI Trend + Weather Details + Health Precautions + Smart Alert -->
+    <section id="dashboard-features" class="vm-section vm-dash-scroll-2">
+      <!-- Row 1: Unified Box (65% Air Quality Index with heading | 35% Pollutant Levels) -->
+      <div class="vm-dash-unified-wrap">
+        <article id="vmMainAqiCard" class="vm-card aqi-level-good vm-dash-card vm-dash-unified-card">
+          <div class="vm-dash-unified-body">
+            <!-- Left 65%: Heading + Badges + Gauge + Boy & Girl Characters + Message -->
+            <div class="vm-dash-unified-left">
+              <div class="vm-dash-aqi-head">
+                <div class="vm-dash-aqi-title-group">
+                  <h2 class="vm-dash-card-title">
+                    <span class="vm-head-ico" aria-hidden="true">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
+                    </span>
+                    <span id="vmAqiCardTitle">Mumbai Air Quality Index</span>
+                  </h2>
+                  <span class="vm-dash-unified-meta">Source: <span id="vmCardSource">Open-Meteo</span></span>
+                </div>
+                <div class="vm-dash-unified-badges">
+                  <span id="vmAqiBadge" class="vm-status-tag vm-status-good">Checking...</span>
+                  <span id="vmDataOriginBadge" class="vm-origin-badge">Live Feed</span>
+                </div>
+              </div>
 
-    <!-- Scrollable Section 1: Air Quality Dashboard Header + AQI Gauge & Pollutant Bars Card -->
-    <section id="live-aqi-section" class="vm-section">
-      <div class="vm-section-head">
-        <div>
-          <h2 class="vm-page-title">Air Quality Dashboard</h2>
-          <p class="vm-section-subtitle">
-            Breathe Better. Live Healthier. &middot; <strong id="vmCardLocation">Mumbai</strong> &middot; Updated <span id="vmCardUpdated">--</span>
-          </p>
-        </div>
-        <div class="vm-weather-pill-card">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" fill="#fde047"></circle>
-            <path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>
-          </svg>
-          <span id="vmHeroWeatherTemp" class="vm-stat-value" style="font-size:1.3rem;">--</span>
-          <div>
-            <div id="vmCardWeatherCond" style="font-weight:700; font-size:0.9rem;">--</div>
-            <div id="vmAqiStandard" class="vm-meta-line" style="font-size:0.76rem;">NAQI Standard</div>
-          </div>
-        </div>
-      </div>
+              <div class="vm-dash-gauge-char-row">
+                <div class="vm-gauge-box vm-gauge-box-compact">
+                  <div id="vmMainAqiGauge"></div>
+                </div>
 
-      <article id="vmMainAqiCard" class="vm-card aqi-level-good" style="padding:28px;">
-        <div class="vm-aqi-header-row" style="margin-bottom:18px;">
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <span id="vmAqiBadge" class="vm-status-tag vm-status-good">Loading...</span>
-            <span id="vmDataOriginBadge" class="vm-badge-data">Live Feed</span>
-          </div>
-          <span class="vm-meta-line">Source: <span id="vmCardSource">Open-Meteo</span></span>
-        </div>
+                <div class="vm-dash-chars-stage">
+                  <img
+                    id="vmAqiCharacterImg"
+                    src="assets/images/aqi-good.jpg"
+                    data-fallback="assets/images/aqi-good.svg"
+                    alt="Two companions reacting to current air quality"
+                    class="vm-dash-chars-img"
+                    onerror="if(this.dataset.fallback && this.src.indexOf(this.dataset.fallback)===-1){this.src=this.dataset.fallback;}"
+                  />
+                </div>
+              </div>
 
-        <div class="vm-gauge-split-3">
-          <!-- Left: Semicircular AQI Gauge -->
-          <div class="vm-gauge-box">
-            <div id="vmMainAqiGauge"></div>
-            <p id="vmAqiMessage" class="vm-meta-line" style="margin-top:8px; justify-content:center; font-weight:600; color:var(--vm-teal-deep); text-align:center;">Loading...</p>
-          </div>
+              <p id="vmAqiMessage" class="vm-dash-aqi-note">Fetching live atmospheric readings...</p>
+            </div>
 
-          <!-- Center: Inline Pollutant Levels Bars -->
-          <div class="vm-pollutant-bars-col">
-            <h3 style="font-size:1.05rem; margin-bottom:2px;">Pollutant Levels</h3>
-            <div id="vmHomePollutantBars" style="display:flex; flex-direction:column; gap:11px;">
-              <span class="vm-meta-line">Loading pollutants...</span>
+            <!-- Right 35%: Pollutant Levels -->
+            <div class="vm-dash-unified-right">
+              <div class="vm-dash-pollutants-head">
+                <h2 class="vm-dash-pollutants-title">Pollutant Levels</h2>
+                <span id="vmPollutantUnitHead" class="vm-dash-card-unit">&micro;g/m&sup3;</span>
+              </div>
+
+              <div id="vmHomePollutantBars" class="vm-pollutant-table">
+                <span class="vm-meta-line">Loading pollutants...</span>
+              </div>
             </div>
           </div>
+        </article>
+      </div>
 
-          <!-- Right: Air Quality Characters (1 Girl + 1 Boy reacting to AQI) -->
-          <div class="vm-char-mini-frame">
-            <img id="vmAqiCharacterImg" src="assets/images/aqi-good.svg" alt="Girl and boy reacting to current air quality" />
-            <p id="vmAqiCharacterCaption" class="vm-aqi-character-caption">Checking condition...</p>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <!-- Scrollable Section 2: AQI Trend Chart -->
-    <section class="vm-section">
-      <article class="vm-card">
-        <div class="vm-section-head" style="margin-bottom:12px;">
-          <div>
-            <h2 class="vm-section-title vm-title-with-ico">
+      <!-- Row 2 (2 Equal Boxes): AQI Trend | Weather Details -->
+      <div class="vm-dash-bento-mid">
+        <!-- Box 3: AQI Trend -->
+        <article class="vm-card vm-dash-card">
+          <div class="vm-dash-card-head">
+            <h2 class="vm-dash-card-title">
               <span class="vm-head-ico" aria-hidden="true">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
               </span>
               <span>AQI Trend</span>
             </h2>
-            <p class="vm-section-subtitle">Hourly air quality trend for <span id="vmTrendCityLabel">your city</span></p>
+            <div id="vmTrendRangeTabs" class="vm-trend-tabs" role="tablist" aria-label="AQI trend timeframe">
+              <button type="button" class="vm-trend-tab active" data-range="today" role="tab" aria-selected="true">Today</button>
+              <button type="button" class="vm-trend-tab" data-range="7d" role="tab" aria-selected="false">7 Days</button>
+              <button type="button" class="vm-trend-tab" data-range="30d" role="tab" aria-selected="false">30 Days</button>
+            </div>
           </div>
-          <a href="insights.html" class="vm-btn vm-btn-outline vm-btn-sm">24h Prediction &rarr;</a>
-        </div>
-        <div id="vmTrendEmpty" class="vm-banner vm-banner-info vm-hidden">No hourly data available yet.</div>
-        <div class="vm-chart-box">
-          <canvas id="vmDashboardTrendChart"></canvas>
-        </div>
-      </article>
-    </section>
+          <p class="vm-dash-trend-sub">Hourly &amp; historical air quality for <span id="vmTrendCityLabel">your city</span></p>
+          <div id="vmTrendEmpty" class="vm-banner vm-banner-info vm-hidden">No trend data available yet.</div>
+          <div class="vm-chart-box-dash">
+            <canvas id="vmDashboardTrendChart"></canvas>
+          </div>
+        </article>
 
-    <!-- Scrollable Section 3: Health Precautions, Weather Details & Alerts Status -->
-    <section class="vm-section">
-      <div class="vm-kpi-row-3">
-        <article class="vm-card">
-          <h3 class="vm-title-with-ico" style="font-size:1.05rem; margin-bottom:12px;">
-            <span class="vm-head-ico" style="width:22px; height:22px;" aria-hidden="true">
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="9" x2="12" y2="15"></line><line x1="9" y1="12" x2="15" y2="12"></line></svg>
-            </span>
-            <span>Health Precautions</span>
-          </h3>
+        <!-- Box 4: Weather Details -->
+        <article class="vm-card vm-dash-card vm-dash-weather-card">
+          <div class="vm-dash-card-head">
+            <h2 class="vm-dash-card-title">
+              <span class="vm-head-ico" style="color:#0ea5e9;" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+              </span>
+              <span>Weather Details</span>
+            </h2>
+            <a href="routes.html" class="vm-quick-arrow">Clean Routes &rarr;</a>
+          </div>
+          <div class="vm-weather-body">
+            <div class="vm-weather-inline-grid">
+              <div class="vm-weather-inline-item">
+                <span class="vm-stat-label">Temperature</span>
+                <div id="statTempVal" class="vm-stat-value tabular-nums" style="font-size:1.55rem; margin-top:6px;">--</div>
+              </div>
+              <div class="vm-weather-inline-item">
+                <span class="vm-stat-label">Humidity</span>
+                <div id="statHumVal" class="vm-stat-value tabular-nums" style="font-size:1.55rem; margin-top:6px;">--</div>
+              </div>
+              <div class="vm-weather-inline-item">
+                <span class="vm-stat-label">Wind Speed</span>
+                <div id="statWindVal" class="vm-stat-value tabular-nums" style="font-size:1.55rem; margin-top:6px;">--</div>
+              </div>
+            </div>
+          </div>
+          <div class="vm-weather-foot">
+            <span class="vm-meta-line">Explore clean corridors &amp; exposures</span>
+            <a href="alerts.html" class="vm-quick-arrow">Manage Alerts &rarr;</a>
+          </div>
+        </article>
+      </div>
+
+      <!-- Row 3 (2 Equal Boxes): Health Precautions | Smart Alert / Hazardous Air Quality -->
+      <div class="vm-dash-bento-bottom">
+        <!-- Box 5: Health Precautions -->
+        <article class="vm-card vm-dash-card">
+          <div class="vm-dash-card-head">
+            <h3 class="vm-dash-card-title">
+              <span class="vm-head-ico" aria-hidden="true">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="9" x2="12" y2="15"></line><line x1="9" y1="12" x2="15" y2="12"></line></svg>
+              </span>
+              <span>Health Precautions</span>
+            </h3>
+            <a href="reports.html" class="vm-quick-arrow">Activity Planner &rarr;</a>
+          </div>
           <ul id="vmHomePrecautionsList" class="vm-check-list">
             <li><span class="vm-check-ico">&check;</span><span>Loading health guidance...</span></li>
           </ul>
         </article>
 
-        <article class="vm-card">
-          <h3 class="vm-title-with-ico" style="font-size:1.05rem; margin-bottom:6px;">
-            <span class="vm-head-ico" style="width:22px; height:22px; color:#0ea5e9;" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
-            </span>
-            <span>Weather Details</span>
-          </h3>
-          <div class="vm-weather-inline-grid">
-            <div class="vm-weather-inline-item">
-              <span class="vm-stat-label">Temperature</span>
-              <div id="statTempVal" class="vm-stat-value" style="font-size:1.35rem; margin-top:4px;">--</div>
-            </div>
-            <div class="vm-weather-inline-item">
-              <span class="vm-stat-label">Humidity</span>
-              <div id="statHumVal" class="vm-stat-value" style="font-size:1.35rem; margin-top:4px;">--</div>
-            </div>
-            <div class="vm-weather-inline-item">
-              <span class="vm-stat-label">Wind Speed</span>
-              <div id="statWindVal" class="vm-stat-value" style="font-size:1.35rem; margin-top:4px;">--</div>
-            </div>
+        <!-- Box 6: Smart Alert / Hazardous Air Quality Status Card -->
+        <article id="vmHomeAlertStatusCard" class="vm-card vm-dash-card vm-smart-alert-card">
+          <div class="vm-dash-card-head">
+            <h3 class="vm-dash-card-title">
+              <span class="vm-alert-bell-badge" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7v4.29l-1.71 1.7A1 1 0 0 0 4 17h16a1 1 0 0 0 .71-1.71L19 13.29V9a7 7 0 0 0-7-7Zm0 20a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Z"/></svg>
+              </span>
+              <span id="vmHomeAlertTitle">Smart Alert</span>
+            </h3>
+            <a href="alerts.html" class="vm-quick-arrow">Try Now &rarr;</a>
           </div>
-        </article>
 
-        <article id="vmHomeAlertStatusCard" class="vm-alert-status-card">
-          <div style="display:flex; align-items:flex-start; gap:12px;">
-            <span class="vm-head-ico" style="width:24px; height:24px; margin-top:2px;" aria-hidden="true">
-              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-            </span>
-            <div>
-              <h3 id="vmHomeAlertTitle" style="font-size:1.05rem; margin-bottom:4px;">Checking Alerts...</h3>
-              <p id="vmHomeAlertDesc" class="vm-section-subtitle" style="margin-top:0;">Scanning local air quality thresholds.</p>
-              <a href="alerts.html" class="vm-quick-arrow" style="display:inline-block; margin-top:8px;">Manage Alerts &rarr;</a>
+          <div class="vm-smart-alert-body">
+            <p id="vmHomeAlertDesc" class="vm-smart-alert-desc">Scanning local air quality thresholds...</p>
+            <div style="margin-top:12px;">
+              <span id="vmHomeAlertBadge" class="vm-status-tag vm-status-good">OK</span>
             </div>
           </div>
-          <span id="vmHomeAlertBadge" class="vm-status-tag vm-status-good">OK</span>
+
+          <div class="vm-smart-alert-foot">
+            <a href="alerts.html" class="vm-quick-arrow">Know more &rarr;</a>
+          </div>
         </article>
       </div>
     </section>
@@ -245,7 +273,7 @@
         <a href="alerts.html">Alerts</a>
         <a href="reports.html">Reports</a>
         <a href="community.html">Community</a>
-        <a href="profile.html">Profile</a>
+        <a href="profile.html">Settings</a>
       </div>
     </div>
   </footer>
