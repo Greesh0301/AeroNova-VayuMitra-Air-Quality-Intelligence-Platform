@@ -4326,3 +4326,685 @@ def get_dashboard_data(city: Optional[str] = None, lat: Optional[float] = None, 
             "community_reports_count": reports_count,
         },
     }
+
+
+# =============================================================================
+# POLLUTION EVENT REPLAY (Pollution Intelligence Centre)
+# =============================================================================
+
+REPLAY_POLLUTANT_CONFIG: Dict[str, Dict[str, Any]] = {
+    "pm2_5": {"api_key": "pm2_5", "label": "PM2.5", "unit": "µg/m³", "min_floor": 12.0},
+    "pm10": {"api_key": "pm10", "label": "PM10", "unit": "µg/m³", "min_floor": 20.0},
+    "no2": {"api_key": "nitrogen_dioxide", "label": "NO2", "unit": "µg/m³", "min_floor": 10.0},
+    "so2": {"api_key": "sulphur_dioxide", "label": "SO2", "unit": "µg/m³", "min_floor": 5.0},
+    "co": {"api_key": "carbon_monoxide", "label": "CO", "unit": "µg/m³", "min_floor": 150.0},
+    "o3": {"api_key": "ozone", "label": "O3", "unit": "µg/m³", "min_floor": 20.0},
+}
+
+_COMPASS_16 = [
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+]
+
+
+def _deg_to_compass(deg: Optional[float]) -> Optional[str]:
+    if deg is None:
+        return None
+    try:
+        idx = int(((float(deg) % 360.0) / 22.5) + 0.5) % 16
+        return _COMPASS_16[idx]
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_iso_to_utc_ts(iso_str: Optional[str], default_tz=timezone.utc) -> Optional[float]:
+    if not iso_str:
+        return None
+    raw = str(iso_str).strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=default_tz)
+        return dt.timestamp()
+    except ValueError:
+        return None
+
+
+def _fetch_historical_weather_hourly(
+    lat: float,
+    lon: float,
+    start_date: str,
+    end_date: str,
+    cutoff_time: str,
+) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
+    """Fetch genuine historical hourly weather aligned by YYYY-MM-DDTHH:00. Never uses current weather."""
+    weather_by_time: Dict[str, Dict[str, Any]] = {}
+    sources_used: List[str] = []
+
+    def _ingest_payload(payload: Dict[str, Any], source_tag: str) -> None:
+        hourly = payload.get("hourly") or {}
+        times = hourly.get("time") or []
+        temps = hourly.get("temperature_2m") or []
+        hums = hourly.get("relative_humidity_2m") or []
+        winds = hourly.get("wind_speed_10m") or []
+        wdirs = hourly.get("wind_direction_10m") or []
+        added = 0
+        for idx, t in enumerate(times):
+            if not t or (cutoff_time and t > cutoff_time):
+                continue
+            temp_v = temps[idx] if idx < len(temps) else None
+            hum_v = hums[idx] if idx < len(hums) else None
+            wind_v = winds[idx] if idx < len(winds) else None
+            wdir_v = wdirs[idx] if idx < len(wdirs) else None
+            if temp_v is None and hum_v is None and wind_v is None and wdir_v is None:
+                continue
+            if t not in weather_by_time:
+                weather_by_time[t] = {
+                    "available": True,
+                    "temperature_c": round(float(temp_v), 1) if temp_v is not None else None,
+                    "humidity": round(float(hum_v), 1) if hum_v is not None else None,
+                    "wind_speed": round(float(wind_v), 1) if wind_v is not None else None,
+                    "wind_direction_deg": round(float(wdir_v), 0) if wdir_v is not None else None,
+                    "wind_direction_compass": _deg_to_compass(wdir_v),
+                }
+                added += 1
+        if added > 0 and source_tag not in sources_used:
+            sources_used.append(source_tag)
+
+    # 1. Open-Meteo Forecast Historical Window (recent ~90 days of hourly observations)
+    try:
+        fc_url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lon}"
+            "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m"
+            f"&start_date={start_date}&end_date={end_date}&timezone=auto"
+        )
+        _ingest_payload(_http_get_json(fc_url), "Open-Meteo Historical Weather Hourly")
+    except Exception:
+        pass
+
+    # 2. Open-Meteo Archive API fallback for older dates if forecast window has gaps
+    try:
+        today_ist = datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
+        archive_cap = (today_ist - timedelta(days=2)).isoformat()
+        if start_date <= archive_cap:
+            arch_end = min(end_date, archive_cap)
+            arch_url = (
+                "https://archive-api.open-meteo.com/v1/archive"
+                f"?latitude={lat}&longitude={lon}"
+                "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m"
+                f"&start_date={start_date}&end_date={arch_end}&timezone=auto"
+            )
+            _ingest_payload(_http_get_json(arch_url), "Open-Meteo ERA5 Historical Archive")
+    except Exception:
+        pass
+
+    return weather_by_time, sources_used
+
+
+def _match_community_reports_for_event(
+    location: Dict[str, Any],
+    start_time_ist: str,
+    end_time_ist: str,
+) -> List[Dict[str, Any]]:
+    """Query actual SQLite community_reports matching the event location and time window."""
+    ist_tz = timezone(timedelta(hours=5, minutes=30))
+    ev_start_ts = _parse_iso_to_utc_ts(start_time_ist, default_tz=ist_tz)
+    ev_end_ts = _parse_iso_to_utc_ts(end_time_ist, default_tz=ist_tz)
+    if ev_start_ts is None or ev_end_ts is None:
+        return []
+
+    win_start_ts = ev_start_ts - (12 * 3600)
+    win_end_ts = ev_end_ts + (12 * 3600)
+
+    city_lower = str(location.get("name") or "").strip().lower()
+    loc_lat = float(location["latitude"])
+    loc_lon = float(location["longitude"])
+
+    all_reports = list_community_reports()
+    matched: List[Dict[str, Any]] = []
+    for rep in all_reports:
+        rep_ts = _parse_iso_to_utc_ts(rep.get("created_at"), default_tz=timezone.utc)
+        if rep_ts is None or not (win_start_ts <= rep_ts <= win_end_ts):
+            continue
+
+        rep_loc = str(rep.get("location_name") or "").lower()
+        rep_lat = rep.get("latitude")
+        rep_lon = rep.get("longitude")
+        dist_km: Optional[float] = None
+        geo_match = False
+
+        if rep_lat is not None and rep_lon is not None:
+            try:
+                dist_km = round(_haversine_km(loc_lat, loc_lon, float(rep_lat), float(rep_lon)), 1)
+                if dist_km <= 50.0:
+                    geo_match = True
+            except (TypeError, ValueError):
+                dist_km = None
+
+        if not geo_match and city_lower and city_lower in rep_loc:
+            geo_match = True
+
+        if not geo_match:
+            continue
+
+        inside_core = ev_start_ts <= rep_ts <= ev_end_ts
+        time_note = "Submitted during spike window" if inside_core else "Submitted within ±12h of spike"
+        dist_note = f"{dist_km} km from {location['name']}" if dist_km is not None else f"City match ({location['name']})"
+
+        matched.append(
+            {
+                "id": rep["id"],
+                "report_code": rep["report_code"],
+                "title": rep["title"],
+                "description": rep["description"],
+                "category": rep["category"],
+                "location_name": rep["location_name"],
+                "latitude": rep["latitude"],
+                "longitude": rep["longitude"],
+                "distance_km": dist_km,
+                "status": rep["status"],
+                "is_verified": rep["is_verified"],
+                "verification_label": rep["verification_label"],
+                "photo_url": rep.get("photo_url"),
+                "created_at": rep["created_at"],
+                "match_note": f"{dist_note} · {time_note}",
+            }
+        )
+
+    matched.sort(key=lambda r: (r["distance_km"] if r["distance_km"] is not None else 9999.0))
+    return matched
+
+
+def get_pollution_event_replay(
+    city: Optional[str] = None,
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    pollutant: str = "pm2_5",
+    threshold_pct: float = 35.0,
+) -> Dict[str, Any]:
+    location = resolve_location(city=city, lat=lat, lon=lon)
+    if not location:
+        raise LookupError(
+            f"Location '{city}' was not found in India. VayuMitra supports Indian cities and neighborhoods only."
+        )
+
+    pol_key = str(pollutant or "pm2_5").strip().lower()
+    if pol_key not in REPLAY_POLLUTANT_CONFIG:
+        raise ValueError(f"Unsupported pollutant '{pollutant}'. Choose from: {', '.join(REPLAY_POLLUTANT_CONFIG.keys())}.")
+    pol_cfg = REPLAY_POLLUTANT_CONFIG[pol_key]
+
+    ist_tz = timezone(timedelta(hours=5, minutes=30))
+    today_dt = datetime.now(ist_tz).date()
+
+    if end_date:
+        try:
+            end_dt = datetime.strptime(end_date.strip(), "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("Invalid end_date format. Use YYYY-MM-DD.") from exc
+    else:
+        end_dt = today_dt
+
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date.strip(), "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("Invalid start_date format. Use YYYY-MM-DD.") from exc
+    else:
+        start_dt = end_dt - timedelta(days=6)
+
+    if end_dt > today_dt:
+        end_dt = today_dt
+    if start_dt > end_dt:
+        raise ValueError("Start date must be on or before end date.")
+    if (end_dt - start_dt).days > 45:
+        raise ValueError("Date range cannot exceed 45 days for hourly event detection.")
+
+    thresh_pct = max(10.0, min(200.0, float(threshold_pct or 35.0)))
+
+    pad_start_str = (start_dt - timedelta(days=1)).isoformat()
+    pad_end_str = min(today_dt, end_dt + timedelta(days=1)).isoformat()
+    start_str = start_dt.isoformat()
+    end_str = end_dt.isoformat()
+
+    aq_url = (
+        "https://air-quality-api.open-meteo.com/v1/air-quality"
+        f"?latitude={location['latitude']}&longitude={location['longitude']}"
+        "&current=us_aqi"
+        "&hourly=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone"
+        f"&start_date={pad_start_str}&end_date={pad_end_str}&timezone=auto"
+    )
+    aq_payload = _http_get_json(aq_url)
+    hourly = aq_payload.get("hourly") or {}
+    times: List[str] = hourly.get("time") or []
+    cur_time = (aq_payload.get("current") or {}).get("time") or datetime.now(ist_tz).strftime("%Y-%m-%dT%H:%M")
+    raw_series = hourly.get(pol_cfg["api_key"]) or []
+
+    padded_points: List[Dict[str, Any]] = []
+    range_indices: List[int] = []
+    for i, t in enumerate(times):
+        if not t or t > cur_time:
+            continue
+        val = raw_series[i] if i < len(raw_series) else None
+        if val is None:
+            continue
+        f_val = round(float(val), 1)
+        idx = len(padded_points)
+        padded_points.append({"time": t, "date": t[:10], "value": f_val})
+        if start_str <= t[:10] <= end_str:
+            range_indices.append(idx)
+
+    # Fetch aligned historical weather only if we have readings
+    weather_by_time: Dict[str, Dict[str, Any]] = {}
+    weather_sources: List[str] = []
+    if len(range_indices) >= 12:
+        weather_by_time, weather_sources = _fetch_historical_weather_hourly(
+            location["latitude"],
+            location["longitude"],
+            pad_start_str,
+            pad_end_str,
+            cur_time,
+        )
+
+    if len(range_indices) < 12:
+        return {
+            "location": location,
+            "pollutant": pol_key,
+            "pollutant_label": pol_cfg["label"],
+            "unit": pol_cfg["unit"],
+            "start_date": start_str,
+            "end_date": end_str,
+            "threshold_pct": thresh_pct,
+            "sufficient_data": False,
+            "readings_count": len(range_indices),
+            "baseline_value": None,
+            "mean_value": None,
+            "threshold_value": None,
+            "threshold_rule": None,
+            "events": [],
+            "data_sources": {
+                "air_quality": "Open-Meteo Air Quality Historical API",
+                "weather": weather_sources or ["Historical weather unavailable"],
+                "community": "VayuMitra Air Guardian SQLite Database",
+            },
+            "message": (
+                f"Insufficient historical {pol_cfg['label']} readings ({len(range_indices)} hours found; "
+                "at least 12 valid hourly readings are required to establish a baseline and detect spikes)."
+            ),
+        }
+
+    range_vals = [padded_points[idx]["value"] for idx in range_indices]
+    sorted_vals = sorted(range_vals)
+    mid = len(sorted_vals) // 2
+    if len(sorted_vals) % 2 == 1:
+        median_baseline = sorted_vals[mid]
+    else:
+        median_baseline = round((sorted_vals[mid - 1] + sorted_vals[mid]) / 2.0, 1)
+    mean_val = round(sum(range_vals) / len(range_vals), 1)
+
+    spike_threshold = round(
+        max(median_baseline * (1.0 + thresh_pct / 100.0), median_baseline + pol_cfg["min_floor"]),
+        1,
+    )
+    threshold_rule = (
+        f"Elevated reading >= max(Median Baseline {median_baseline} {pol_cfg['unit']} × {1 + thresh_pct / 100:.2f}, "
+        f"Baseline + {pol_cfg['min_floor']:.0f} {pol_cfg['unit']}) = {spike_threshold} {pol_cfg['unit']}"
+    )
+
+    # Group consecutive elevated readings inside [start_date, end_date] into discrete events
+    soft_bridge = median_baseline + 0.70 * (spike_threshold - median_baseline)
+    raw_groups: List[List[int]] = []
+    current_group: List[int] = []
+
+    for pos, p_idx in enumerate(range_indices):
+        val = padded_points[p_idx]["value"]
+        is_high = val >= spike_threshold
+        if is_high:
+            current_group.append(p_idx)
+        elif current_group:
+            # Bridge a single-hour slight dip if next reading is elevated again and consecutive in time
+            next_high = (
+                pos + 1 < len(range_indices)
+                and padded_points[range_indices[pos + 1]]["value"] >= spike_threshold
+                and val >= soft_bridge
+                and range_indices[pos + 1] == p_idx + 1
+            )
+            if next_high and p_idx == current_group[-1] + 1:
+                current_group.append(p_idx)
+            else:
+                raw_groups.append(current_group)
+                current_group = []
+    if current_group:
+        raw_groups.append(current_group)
+
+    # Filter significant events (>= 2 hours OR single-hour extreme surge >= 1.15x spike threshold)
+    significant_groups: List[List[int]] = []
+    for grp in raw_groups:
+        grp_vals = [padded_points[idx]["value"] for idx in grp]
+        peak_v = max(grp_vals)
+        if len(grp) >= 2 or peak_v >= round(max(spike_threshold * 1.15, median_baseline + pol_cfg["min_floor"] * 1.5), 1):
+            significant_groups.append(grp)
+
+    # Sort events by peak severity descending
+    significant_groups.sort(
+        key=lambda g: max(padded_points[idx]["value"] for idx in g),
+        reverse=True,
+    )
+
+    events: List[Dict[str, Any]] = []
+    for ev_num, grp in enumerate(significant_groups, start=1):
+        g_start = grp[0]
+        g_end = grp[-1]
+        ev_points = [padded_points[idx] for idx in range(g_start, g_end + 1)]
+        peak_pt = max(ev_points, key=lambda p: p["value"])
+        avg_ev = round(sum(p["value"] for p in ev_points) / len(ev_points), 1)
+        pct_above = round(((peak_pt["value"] - median_baseline) / max(median_baseline, 0.1)) * 100.0, 1)
+
+        ctx_start = max(0, g_start - 6)
+        ctx_end = min(len(padded_points) - 1, g_end + 6)
+        timeline: List[Dict[str, Any]] = []
+        ev_winds: List[float] = []
+        ev_wdirs: List[float] = []
+        ev_temps: List[float] = []
+        ev_hums: List[float] = []
+        hours_with_weather = 0
+
+        for idx in range(ctx_start, ctx_end + 1):
+            pt = padded_points[idx]
+            phase = "before" if idx < g_start else ("after" if idx > g_end else "during")
+            w = weather_by_time.get(pt["time"]) or {
+                "available": False,
+                "temperature_c": None,
+                "humidity": None,
+                "wind_speed": None,
+                "wind_direction_deg": None,
+                "wind_direction_compass": None,
+            }
+            if phase == "during" and w.get("available"):
+                hours_with_weather += 1
+                if w.get("wind_speed") is not None:
+                    ev_winds.append(w["wind_speed"])
+                if w.get("wind_direction_deg") is not None:
+                    ev_wdirs.append(w["wind_direction_deg"])
+                if w.get("temperature_c") is not None:
+                    ev_temps.append(w["temperature_c"])
+                if w.get("humidity") is not None:
+                    ev_hums.append(w["humidity"])
+
+            timeline.append(
+                {
+                    "time": pt["time"],
+                    "phase": phase,
+                    "is_peak": pt["time"] == peak_pt["time"],
+                    "value": pt["value"],
+                    "weather": w,
+                }
+            )
+
+        # Vector average for prevailing wind direction if available
+        prevailing_deg: Optional[float] = None
+        prevailing_compass: Optional[str] = None
+        if ev_wdirs:
+            sin_sum = sum(math.sin(math.radians(d)) for d in ev_wdirs)
+            cos_sum = sum(math.cos(math.radians(d)) for d in ev_wdirs)
+            if abs(sin_sum) > 1e-6 or abs(cos_sum) > 1e-6:
+                prevailing_deg = round((math.degrees(math.atan2(sin_sum, cos_sum)) + 360.0) % 360.0, 0)
+                prevailing_compass = _deg_to_compass(prevailing_deg)
+
+        weather_available = hours_with_weather > 0 and (bool(ev_winds) or bool(ev_temps) or bool(ev_hums))
+        weather_summary = {
+            "available": weather_available,
+            "hours_with_weather": hours_with_weather,
+            "total_event_hours": len(ev_points),
+            "wind_speed_min": round(min(ev_winds), 1) if ev_winds else None,
+            "wind_speed_max": round(max(ev_winds), 1) if ev_winds else None,
+            "wind_speed_avg": round(sum(ev_winds) / len(ev_winds), 1) if ev_winds else None,
+            "low_wind_hours": sum(1 for ws in ev_winds if ws < 8.0),
+            "prevailing_wind_deg": prevailing_deg,
+            "prevailing_wind_compass": prevailing_compass,
+            "temp_min_c": round(min(ev_temps), 1) if ev_temps else None,
+            "temp_max_c": round(max(ev_temps), 1) if ev_temps else None,
+            "temp_avg_c": round(sum(ev_temps) / len(ev_temps), 1) if ev_temps else None,
+            "humidity_min": round(min(ev_hums), 1) if ev_hums else None,
+            "humidity_max": round(max(ev_hums), 1) if ev_hums else None,
+            "humidity_avg": round(sum(ev_hums) / len(ev_hums), 1) if ev_hums else None,
+            "note": (
+                f"Historical weather aligned for {hours_with_weather}/{len(ev_points)} event hours."
+                if weather_available
+                else "Historical weather records are unavailable for this event period."
+            ),
+        }
+
+        matched_reports = _match_community_reports_for_event(
+            location,
+            ev_points[0]["time"],
+            ev_points[-1]["time"],
+        )
+
+        events.append(
+            {
+                "event_id": f"EVT-{ev_num}",
+                "event_date": peak_pt["time"][:10],
+                "start_time": ev_points[0]["time"],
+                "peak_time": peak_pt["time"],
+                "end_time": ev_points[-1]["time"],
+                "duration_hours": len(ev_points),
+                "baseline_value": median_baseline,
+                "threshold_value": spike_threshold,
+                "peak_value": peak_pt["value"],
+                "avg_event_value": avg_ev,
+                "pct_above_baseline": pct_above,
+                "timeline": timeline,
+                "weather_summary": weather_summary,
+                "community_reports": matched_reports,
+            }
+        )
+
+    return {
+        "location": location,
+        "pollutant": pol_key,
+        "pollutant_label": pol_cfg["label"],
+        "unit": pol_cfg["unit"],
+        "start_date": start_str,
+        "end_date": end_str,
+        "threshold_pct": thresh_pct,
+        "sufficient_data": True,
+        "readings_count": len(range_indices),
+        "baseline_value": median_baseline,
+        "mean_value": mean_val,
+        "threshold_value": spike_threshold,
+        "threshold_rule": threshold_rule,
+        "events": events,
+        "data_sources": {
+            "air_quality": "Open-Meteo Air Quality Historical API",
+            "weather": weather_sources if weather_sources else ["Historical weather unavailable"],
+            "community": "VayuMitra Air Guardian SQLite Database",
+        },
+        "message": (
+            f"Detected {len(events)} pollution spike event(s) across {len(range_indices)} hourly readings."
+            if events
+            else f"Analyzed {len(range_indices)} valid hourly readings; no {pol_cfg['label']} spikes exceeded {spike_threshold} {pol_cfg['unit']}."
+        ),
+    }
+
+
+def _pdf_escape(text: str) -> str:
+    ascii_safe = (
+        str(text or "")
+        .replace("µ", "u")
+        .replace("³", "3")
+        .replace("²", "2")
+        .replace("₂", "2")
+        .replace("₃", "3")
+        .replace("°", " deg ")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("·", "|")
+    )
+    ascii_safe = ascii_safe.encode("latin-1", "replace").decode("latin-1")
+    return ascii_safe.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _wrap_pdf_lines(text: str, max_chars: int = 88) -> List[str]:
+    lines: List[str] = []
+    for raw_para in str(text or "").splitlines():
+        words = raw_para.split()
+        if not words:
+            lines.append("")
+            continue
+        cur = words[0]
+        for w in words[1:]:
+            if len(cur) + 1 + len(w) <= max_chars:
+                cur += " " + w
+            else:
+                lines.append(cur)
+                cur = w
+        lines.append(cur)
+    return lines
+
+
+def generate_event_replay_pdf(summary: Dict[str, Any]) -> Tuple[str, bytes]:
+    """Build a valid multi-page PDF 1.4 Pollution Event Replay investigation report using stdlib only."""
+    city = str(summary.get("city") or "India")
+    pol = str(summary.get("pollutant_label") or "PM2.5")
+    unit = str(summary.get("unit") or "ug/m3")
+    ev_date = str(summary.get("event_date") or "--")
+
+    # Prepare structured styled line entries: (text, font_tag, size, leading)
+    entries: List[Tuple[str, str, int, int]] = [
+        ("VayuMitra - Pollution Event Replay Report", "F2", 16, 24),
+        (f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", "F1", 9, 16),
+        ("", "F1", 10, 8),
+        ("1. Event Identification & Metrics", "F2", 12, 18),
+        (f"Selected City: {city}", "F1", 10, 14),
+        (f"Pollutant: {pol} ({unit})", "F1", 10, 14),
+        (f"Event Date: {ev_date}", "F1", 10, 14),
+        (f"Start Time: {summary.get('start_time', '--')}   |   Peak Time: {summary.get('peak_time', '--')}   |   End Time: {summary.get('end_time', '--')}", "F1", 10, 14),
+        (f"Duration: {summary.get('duration_hours', '--')} hour(s)", "F1", 10, 14),
+        (f"Baseline Concentration: {summary.get('baseline_value', '--')} {unit}   |   Spike Threshold: {summary.get('threshold_value', '--')} {unit}", "F1", 10, 14),
+        (f"Peak Concentration: {summary.get('peak_value', '--')} {unit} ({summary.get('pct_above_baseline', '--')}% above baseline)", "F1", 10, 14),
+        ("", "F1", 10, 10),
+        ("2. Historical Weather Conditions (Aligned to Event Timeline)", "F2", 12, 18),
+    ]
+
+    ws = summary.get("weather_summary") or {}
+    if ws.get("available"):
+        entries.append((
+            f"Wind Speed: avg {ws.get('wind_speed_avg', '--')} km/h (range {ws.get('wind_speed_min', '--')} - {ws.get('wind_speed_max', '--')} km/h)",
+            "F1", 10, 14,
+        ))
+        entries.append((
+            f"Prevailing Wind Direction: {ws.get('prevailing_wind_compass', '--')} ({ws.get('prevailing_wind_deg', '--')} deg)   |   Low-wind hours (<8 km/h): {ws.get('low_wind_hours', 0)}",
+            "F1", 10, 14,
+        ))
+        entries.append((
+            f"Temperature: avg {ws.get('temp_avg_c', '--')} C (range {ws.get('temp_min_c', '--')} - {ws.get('temp_max_c', '--')} C)",
+            "F1", 10, 14,
+        ))
+        entries.append((
+            f"Humidity: avg {ws.get('humidity_avg', '--')}% (range {ws.get('humidity_min', '--')} - {ws.get('humidity_max', '--')}%)",
+            "F1", 10, 14,
+        ))
+    else:
+        entries.append(("Historical weather records were unavailable for this event period.", "F1", 10, 14))
+
+    entries.append(("", "F1", 10, 10))
+    entries.append(("3. Matching Air Guardian Community Reports", "F2", 12, 18))
+    reports = summary.get("community_reports") or []
+    if not reports:
+        entries.append(("No matching community reports found for this event.", "F1", 10, 14))
+    else:
+        for r in reports:
+            entries.append((
+                f"[{r.get('report_code', 'REP')}] {r.get('title', 'Report')} ({r.get('category', '')}) - {r.get('status', '')}",
+                "F2", 10, 14,
+            ))
+            entries.append((
+                f"Location: {r.get('location_name', '--')} | Reported: {r.get('created_at', '--')}",
+                "F1", 9, 13,
+            ))
+            for line in _wrap_pdf_lines(r.get("description", ""), 86):
+                entries.append((line, "F1", 9, 12))
+            entries.append(("", "F1", 9, 6))
+
+    entries.append(("", "F1", 10, 10))
+    entries.append(("4. AI-Powered Event Explanation", "F2", 12, 18))
+    ai_text = str(summary.get("ai_explanation") or "").strip() or "AI explanation was not generated for this export."
+    for line in _wrap_pdf_lines(ai_text, 88):
+        entries.append((line, "F1", 10, 14))
+
+    entries.append(("", "F1", 10, 10))
+    entries.append(("5. Data Sources & Availability", "F2", 12, 18))
+    ds = summary.get("data_sources") or {}
+    entries.append((f"Air Quality Source: {ds.get('air_quality', 'Open-Meteo Air Quality Historical API')}", "F1", 9, 13))
+    w_src = ds.get("weather")
+    w_src_str = ", ".join(w_src) if isinstance(w_src, list) else str(w_src or "Open-Meteo Historical Weather")
+    entries.append((f"Historical Weather Source: {w_src_str}", "F1", 9, 13))
+    entries.append((f"Community Reports Source: {ds.get('community', 'VayuMitra Air Guardian SQLite Database')}", "F1", 9, 13))
+
+    # Paginate into Letter/A4 pages (612 x 792 pt, top margin 752, bottom margin 52)
+    pages_ops: List[List[str]] = [[]]
+    y = 750
+    for text, font, size, lead in entries:
+        if y < 56:
+            pages_ops.append([])
+            y = 750
+        if text:
+            escaped = _pdf_escape(text)
+            pages_ops[-1].append(f"BT /{font} {size} Tf 50 {y} Td ({escaped}) Tj ET")
+        y -= lead
+
+    # Assemble PDF binary objects: 1=Catalog, 2=Pages, 3=Helvetica, 4=Helvetica-Bold, then pairs (Page, Content)
+    objs: List[bytes] = []
+    objs.append(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+
+    page_obj_nums = []
+    next_id = 5
+    page_objs: List[bytes] = []
+    for ops in pages_ops:
+        page_id = next_id
+        content_id = next_id + 1
+        next_id += 2
+        page_obj_nums.append(page_id)
+        stream_data = "\n".join(ops).encode("latin-1")
+        page_objs.append(
+            f"{page_id} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {content_id} 0 R >>\nendobj\n".encode("latin-1")
+        )
+        page_objs.append(
+            f"{content_id} 0 obj\n<< /Length {len(stream_data)} >>\nstream\n".encode("latin-1")
+            + stream_data
+            + b"\nendstream\nendobj\n"
+        )
+
+    kids_str = " ".join(f"{pid} 0 R" for pid in page_obj_nums)
+    objs.append(f"2 0 obj\n<< /Type /Pages /Kids [ {kids_str} ] /Count {len(page_obj_nums)} >>\nendobj\n".encode("latin-1"))
+    objs.append(b"3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n")
+    objs.append(b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n")
+    objs.extend(page_objs)
+
+    buf = io.BytesIO()
+    buf.write(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets: List[int] = [0]
+    for obj in objs:
+        offsets.append(buf.tell())
+        buf.write(obj)
+
+    xref_pos = buf.tell()
+    buf.write(f"xref\n0 {len(objs) + 1}\n".encode("latin-1"))
+    buf.write(b"0000000000 65535 f \n")
+    for off in offsets[1:]:
+        buf.write(f"{off:010d} 00000 n \n".encode("latin-1"))
+    buf.write(
+        f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("latin-1")
+    )
+
+    safe_city = re.sub(r"[^a-zA-Z0-9_-]+", "_", city).strip("_") or "India"
+    safe_date = re.sub(r"[^0-9-]+", "", ev_date) or "event"
+    filename = f"VayuMitra_Event_Replay_{safe_city}_{safe_date}.pdf"
+    return filename, buf.getvalue()
+
