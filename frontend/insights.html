@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/pages.css" />
   <link rel="stylesheet" href="css/responsive.css" />
@@ -102,6 +103,10 @@
       <a href="#ins-simulator" class="vm-jump-pill vm-title-with-ico" style="gap:7px;">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"></path><path d="M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"></path></svg>
         <span>What-If Simulator</span>
+      </a>
+      <a href="#ins-event-replay" class="vm-jump-pill vm-title-with-ico" style="gap:7px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        <span>Pollution Event Replay</span>
       </a>
     </div>
 
@@ -278,6 +283,215 @@
         </div>
       </article>
     </section>
+
+    <!-- Scrollable Section 5: Pollution Event Replay -->
+    <section id="ins-event-replay" class="vm-section">
+      <article class="vm-card">
+        <div class="vm-section-head">
+          <div>
+            <h2 class="vm-section-title vm-title-with-ico">
+              <span class="vm-head-ico" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              </span>
+              <span>Pollution Event Replay</span>
+            </h2>
+            <p class="vm-section-subtitle">Investigate historical pollution spikes alongside weather conditions, community observations, and evidence-grounded AI analysis</p>
+          </div>
+          <span id="erStatusBadge" class="vm-badge-data vm-badge-verified">Historical Replay</span>
+        </div>
+
+        <!-- Step 1: Select Location, Date Range, Pollutant & Explainable Threshold -->
+        <form id="erFilterForm" class="vm-replay-controls">
+          <div class="vm-replay-field">
+            <label for="erCityInput" class="vm-stat-label">City</label>
+            <input id="erCityInput" type="text" list="erCityDatalist" class="vm-input" placeholder="e.g., Delhi, Mumbai, Bengaluru" autocomplete="off" required />
+            <datalist id="erCityDatalist"></datalist>
+          </div>
+          <div class="vm-replay-field">
+            <label for="erStartDate" class="vm-stat-label">From Date</label>
+            <input id="erStartDate" type="date" class="vm-input" required />
+          </div>
+          <div class="vm-replay-field">
+            <label for="erEndDate" class="vm-stat-label">To Date</label>
+            <input id="erEndDate" type="date" class="vm-input" required />
+          </div>
+          <div class="vm-replay-field">
+            <label for="erPollutantSelect" class="vm-stat-label">Pollutant</label>
+            <select id="erPollutantSelect" class="vm-select">
+              <option value="pm2_5" selected>PM2.5 (µg/m³)</option>
+              <option value="pm10">PM10 (µg/m³)</option>
+              <option value="no2">NO₂ (µg/m³)</option>
+              <option value="so2">SO₂ (µg/m³)</option>
+              <option value="co">CO (µg/m³)</option>
+              <option value="o3">O₃ (µg/m³)</option>
+            </select>
+          </div>
+          <div class="vm-replay-field">
+            <label for="erThresholdSelect" class="vm-stat-label">Spike Threshold</label>
+            <select id="erThresholdSelect" class="vm-select">
+              <option value="20">+20% above baseline</option>
+              <option value="35" selected>+35% above baseline (Default)</option>
+              <option value="50">+50% above baseline</option>
+              <option value="75">+75% above baseline</option>
+              <option value="100">+100% above baseline</option>
+            </select>
+          </div>
+          <div class="vm-replay-field vm-replay-submit-wrap">
+            <button id="erDetectBtn" type="submit" class="vm-btn vm-btn-primary vm-btn-sm">Detect Events</button>
+          </div>
+        </form>
+
+        <div id="erMessageBanner" class="vm-banner vm-hidden" style="margin-top:12px;"></div>
+        <p id="erBaselineRuleNote" class="vm-meta-line" style="margin-top:10px;"></p>
+
+        <!-- Step 2: Detected Pollution Events -->
+        <div id="erDetectedWrap" class="vm-replay-block vm-hidden">
+          <div class="vm-replay-block-head">
+            <h3 class="vm-replay-subheading">Detected Pollution Events</h3>
+            <span id="erEventsCountTag" class="vm-status-tag vm-status-moderate">0 Events</span>
+          </div>
+          <div id="erEventsList" class="vm-replay-events-grid"></div>
+        </div>
+
+        <!-- Steps 3–7: Selected Event Replay Workspace -->
+        <div id="erReplayWorkspace" class="vm-replay-workspace vm-hidden">
+          <!-- Step 3: Interactive Pollution Timeline -->
+          <div class="vm-replay-subcard">
+            <div class="vm-replay-block-head">
+              <div>
+                <h3 class="vm-replay-subheading">Interactive Pollution Timeline</h3>
+                <p id="erTimelineSubtitle" class="vm-meta-line">Click or hover any hourly point on the graph to inspect readings and weather.</p>
+              </div>
+              <span id="erSelectedEventPill" class="vm-status-tag vm-status-bad">--</span>
+            </div>
+
+            <div class="vm-replay-kpi-strip">
+              <div class="vm-replay-kpi">
+                <span class="vm-stat-label">Start Time</span>
+                <strong id="erKpiStart">--</strong>
+              </div>
+              <div class="vm-replay-kpi">
+                <span class="vm-stat-label">Peak Time</span>
+                <strong id="erKpiPeakTime">--</strong>
+              </div>
+              <div class="vm-replay-kpi">
+                <span class="vm-stat-label">End Time</span>
+                <strong id="erKpiEnd">--</strong>
+              </div>
+              <div class="vm-replay-kpi">
+                <span class="vm-stat-label">Baseline Level</span>
+                <strong id="erKpiBaseline">--</strong>
+              </div>
+              <div class="vm-replay-kpi">
+                <span class="vm-stat-label">Max Recorded</span>
+                <strong id="erKpiPeakVal" style="color:#dc2626;">--</strong>
+              </div>
+            </div>
+
+            <div class="vm-chart-box-lg" style="height:290px; margin-top:12px;">
+              <canvas id="vmEventReplayChart"></canvas>
+            </div>
+
+            <div id="erPointInspector" class="vm-replay-inspector">
+              Select or hover any point on the timeline to inspect its exact concentration and historical weather.
+            </div>
+          </div>
+
+          <!-- Step 4 & Step 5 Split: Historical Weather Correlation + Air Guardian Network -->
+          <div class="vm-replay-two-col">
+            <!-- Step 4: Historical Weather Correlation -->
+            <div class="vm-replay-subcard">
+              <div class="vm-replay-block-head">
+                <div>
+                  <h3 class="vm-replay-subheading">Historical Weather Correlation</h3>
+                  <p id="erWeatherAvailabilityNote" class="vm-meta-line">Aligned strictly to the selected event timeline</p>
+                </div>
+                <span id="erWeatherStatusTag" class="vm-status-tag vm-status-good">Historical</span>
+              </div>
+
+              <div id="erWeatherUnavailableBox" class="vm-replay-empty vm-hidden">
+                Historical weather data is unavailable for this event period.
+              </div>
+
+              <div id="erWeatherContent">
+                <div class="vm-replay-weather-grid">
+                  <div class="vm-replay-weather-tile">
+                    <span class="vm-stat-label">Wind Speed</span>
+                    <strong id="erWxWindSpeed">--</strong>
+                    <span id="erWxWindMeta" class="vm-meta-line">--</span>
+                  </div>
+                  <div class="vm-replay-weather-tile">
+                    <span class="vm-stat-label">Wind Direction</span>
+                    <strong id="erWxWindDir">--</strong>
+                    <span id="erWxWindDirMeta" class="vm-meta-line">--</span>
+                  </div>
+                  <div class="vm-replay-weather-tile">
+                    <span class="vm-stat-label">Temperature</span>
+                    <strong id="erWxTemp">--</strong>
+                    <span id="erWxTempMeta" class="vm-meta-line">--</span>
+                  </div>
+                  <div class="vm-replay-weather-tile">
+                    <span class="vm-stat-label">Humidity</span>
+                    <strong id="erWxHumidity">--</strong>
+                    <span id="erWxHumidityMeta" class="vm-meta-line">--</span>
+                  </div>
+                </div>
+                <div class="vm-chart-box" style="height:200px; margin-top:12px;">
+                  <canvas id="vmEventWeatherChart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 5: Air Guardian Network Integration -->
+            <div class="vm-replay-subcard">
+              <div class="vm-replay-block-head">
+                <div>
+                  <h3 class="vm-replay-subheading">Air Guardian Network Reports</h3>
+                  <p class="vm-meta-line">Actual citizen reports matching event city/area and ±12h window</p>
+                </div>
+                <span id="erReportsCountTag" class="vm-status-tag vm-status-satisfactory">0 Matched</span>
+              </div>
+
+              <div id="erReportsEmptyBox" class="vm-replay-empty vm-hidden">
+                No matching community reports found for this event.
+              </div>
+
+              <div id="erReportsContent">
+                <div id="erReportsMap" class="vm-replay-map" aria-label="Matched Air Guardian reports map"></div>
+                <div id="erReportsList" class="vm-replay-reports-list"></div>
+                <div id="erReportDetailBox" class="vm-replay-report-detail vm-hidden"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 6: AI-Powered Event Explanation -->
+          <div class="vm-replay-subcard">
+            <div class="vm-replay-block-head">
+              <div>
+                <h3 class="vm-replay-subheading">AI-Powered Event Explanation</h3>
+                <p class="vm-meta-line">Grounded in measured concentrations, historical weather, and Air Guardian reports</p>
+              </div>
+              <button id="erExplainBtn" type="button" class="vm-btn vm-btn-outline vm-btn-sm">Refresh Explanation</button>
+            </div>
+            <div id="erAiExplanationBox" class="vm-replay-ai-box">
+              Select an event to generate an evidence-grounded explanation.
+            </div>
+          </div>
+
+          <!-- Step 7: Event Summary & Downloadable PDF Report -->
+          <div class="vm-replay-subcard">
+            <div class="vm-replay-block-head">
+              <div>
+                <h3 class="vm-replay-subheading">Event Summary &amp; Report</h3>
+                <p class="vm-meta-line">Structured investigation summary ready for download</p>
+              </div>
+              <button id="erDownloadPdfBtn" type="button" class="vm-btn vm-btn-primary vm-btn-sm">Download PDF Report</button>
+            </div>
+            <div id="erSummaryGrid" class="vm-replay-summary-grid"></div>
+          </div>
+        </div>
+      </article>
+    </section>
   </main>
 
   <footer class="vm-footer">
@@ -294,6 +508,7 @@
     </div>
   </footer>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="javascript/api.js"></script>
   <script src="javascript/main.js"></script>

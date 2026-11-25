@@ -21,6 +21,7 @@ from services import (
     delete_personal_location,
     export_air_twin_csv,
     export_reports_csv,
+    generate_event_replay_pdf,
     get_air_quality_data,
     get_air_twin_data,
     get_alerts_data,
@@ -31,6 +32,7 @@ from services import (
     get_forecast_data,
     get_india_locations_directory,
     get_insights_data,
+    get_pollution_event_replay,
     get_profile_bundle,
     get_reports_data,
     get_time_machine_data,
@@ -185,6 +187,47 @@ def create_flask_app():
             return jsonify({"error": str(exc)}), 404
         except Exception as exc:
             return jsonify({"error": f"Time Machine archive unavailable: {exc}"}), 502
+
+    @app.route("/api/insights/event-replay", methods=["GET"])
+    def api_event_replay():
+        try:
+            city = request.args.get("city")
+            lat = _parse_float(request.args.get("lat"))
+            lon = _parse_float(request.args.get("lon"))
+            start_date = request.args.get("start_date")
+            end_date = request.args.get("end_date")
+            pollutant = request.args.get("pollutant", "pm2_5")
+            threshold_pct = _parse_float(request.args.get("threshold_pct")) or 35.0
+            return jsonify(
+                get_pollution_event_replay(
+                    city=city,
+                    lat=lat,
+                    lon=lon,
+                    start_date=start_date,
+                    end_date=end_date,
+                    pollutant=pollutant,
+                    threshold_pct=threshold_pct,
+                )
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"error": f"Pollution Event Replay unavailable: {exc}"}), 502
+
+    @app.route("/api/insights/event-replay/pdf", methods=["POST"])
+    def api_event_replay_pdf():
+        try:
+            data = request.get_json(silent=True) or {}
+            fname, pdf_bytes = generate_event_replay_pdf(data)
+            return Response(
+                pdf_bytes,
+                mimetype="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+            )
+        except Exception as exc:
+            return jsonify({"error": f"PDF generation failed: {exc}"}), 500
 
     @app.route("/api/insights/simulate", methods=["POST"])
     def api_simulate():
@@ -578,6 +621,19 @@ def run_stdlib_server(host: str, port: int):
                             q("compare_date"),
                         ),
                     )
+                if path == "/api/insights/event-replay":
+                    return self._send_json(
+                        200,
+                        get_pollution_event_replay(
+                            q("city"),
+                            _parse_float(q("lat")),
+                            _parse_float(q("lon")),
+                            q("start_date"),
+                            q("end_date"),
+                            q("pollutant", "pm2_5"),
+                            _parse_float(q("threshold_pct")) or 35.0,
+                        ),
+                    )
                 if path == "/api/routes":
                     return self._send_json(
                         200,
@@ -678,6 +734,16 @@ def run_stdlib_server(host: str, port: int):
                         industrial_reduction_pct=float(data.get("industrial_reduction_pct", 0)),
                     )
                     return self._send_json(200, res)
+
+                if path == "/api/insights/event-replay/pdf":
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                    fname, pdf_bytes = generate_event_replay_pdf(data)
+                    return self._send_bytes(
+                        200,
+                        "application/pdf",
+                        pdf_bytes,
+                        {"Content-Disposition": f'attachment; filename="{fname}"'},
+                    )
 
                 if path == "/api/auth/login":
                     data = json.loads(self._read_body().decode("utf-8") or "{}")

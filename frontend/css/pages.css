@@ -1886,3 +1886,279 @@
   margin-bottom: 14px;
 }
 
+/* =========================================================
+   POLLUTION EVENT REPLAY (insights.html)
+   ========================================================= */
+.vm-replay-controls {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr 1fr 1.2fr auto;
+  gap: 12px;
+  align-items: end;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(244, 250, 247, 0.88);
+  border: 1px solid var(--vm-border-hairline);
+}
+
+.vm-replay-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.vm-replay-submit-wrap {
+  justify-content: flex-end;
+}
+
+.vm-replay-block {
+  margin-top: 18px;
+}
+
+.vm-replay-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.vm-replay-subheading {
+  font-size: 1.04rem;
+  font-weight: 800;
+  color: var(--vm-teal-deep);
+  margin: 0;
+}
+
+.vm-replay-events-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.vm-replay-event-btn {
+  text-align: left;
+  padding: 13px 15px;
+  border-radius: 15px;
+  border: 1.5px solid var(--vm-border-hairline);
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+}
+
+.vm-replay-event-btn:hover {
+  border-color: var(--vm-green-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(16, 52, 59, 0.08);
+}
+
+.vm-replay-event-btn.active {
+  border-color: var(--vm-green-primary);
+  background: rgba(236, 253, 245, 0.96);
+  box-shadow: 0 8px 20px rgba(27, 138, 75, 0.14);
+}
+
+.vm-replay-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.vm-replay-subcard {
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--vm-border-hairline);
+}
+
+.vm-replay-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vm-replay-kpi {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(244, 250, 247, 0.92);
+  border: 1px solid var(--vm-border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vm-replay-kpi strong {
+  font-size: 0.95rem;
+  color: var(--vm-teal-deep);
+  font-variant-numeric: tabular-nums;
+}
+
+.vm-replay-inspector {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(240, 249, 244, 0.9);
+  border: 1px solid rgba(22, 163, 74, 0.22);
+  font-size: 0.87rem;
+  color: var(--vm-teal-deep);
+  line-height: 1.45;
+}
+
+.vm-replay-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.vm-replay-weather-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vm-replay-weather-tile {
+  padding: 11px 13px;
+  border-radius: 13px;
+  background: rgba(244, 250, 247, 0.92);
+  border: 1px solid var(--vm-border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vm-replay-weather-tile strong {
+  font-size: 1.02rem;
+  color: var(--vm-teal-deep);
+  font-variant-numeric: tabular-nums;
+}
+
+.vm-replay-empty {
+  padding: 18px 16px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px dashed rgba(16, 52, 59, 0.22);
+  color: var(--vm-teal-mid);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.vm-replay-map {
+  width: 100%;
+  height: 205px;
+  border-radius: 14px;
+  border: 1px solid var(--vm-border-hairline);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.vm-replay-reports-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.vm-replay-report-item {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--vm-border-hairline);
+  background: rgba(244, 250, 247, 0.86);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.vm-replay-report-item:hover,
+.vm-replay-report-item.active {
+  border-color: var(--vm-green-primary);
+  background: rgba(230, 245, 236, 0.95);
+}
+
+.vm-replay-report-detail {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(27, 138, 75, 0.26);
+  font-size: 0.88rem;
+  color: var(--vm-teal-deep);
+  line-height: 1.5;
+}
+
+.vm-replay-ai-box {
+  padding: 15px 17px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(240, 249, 244, 0.94) 0%, rgba(236, 253, 245, 0.92) 100%);
+  border: 1px solid rgba(22, 163, 74, 0.24);
+  color: var(--vm-teal-deep);
+  font-size: 0.94rem;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.vm-replay-ai-box.is-error {
+  background: rgba(254, 242, 242, 0.92);
+  border-color: rgba(220, 38, 38, 0.28);
+  color: #991b1b;
+}
+
+.vm-replay-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vm-replay-summary-cell {
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: rgba(244, 250, 247, 0.88);
+  border: 1px solid var(--vm-border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vm-replay-summary-cell strong {
+  font-size: 0.92rem;
+  color: var(--vm-teal-deep);
+}
+
+.vm-replay-summary-cell.is-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1024px) {
+  .vm-replay-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vm-replay-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vm-replay-two-col {
+    grid-template-columns: 1fr;
+  }
+  .vm-replay-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .vm-replay-controls,
+  .vm-replay-kpi-strip,
+  .vm-replay-weather-grid,
+  .vm-replay-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}

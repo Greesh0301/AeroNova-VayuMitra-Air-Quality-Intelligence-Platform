@@ -82,6 +82,36 @@
     getTimeMachine(params) {
       return requestJson(`/api/insights/time-machine${buildQuery(params)}`);
     },
+    getEventReplay(params) {
+      return requestJson(`/api/insights/event-replay${buildQuery(params)}`);
+    },
+    explainEventReplay(payload) {
+      return requestJson("/api/insights/event-replay/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    },
+    async downloadEventReplayPdf(payload) {
+      const resp = await fetch("/api/insights/event-replay/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        let msg = `PDF export failed (${resp.status})`;
+        try {
+          const j = await resp.json();
+          if (j && j.error) msg = j.error;
+        } catch (_e) {}
+        throw new Error(msg);
+      }
+      const disp = resp.headers.get("Content-Disposition") || "";
+      const match = disp.match(/filename="?([^"]+)"?/i);
+      const filename = match ? match[1] : "VayuMitra_Event_Replay.pdf";
+      const blob = await resp.blob();
+      return { blob, filename };
+    },
     simulateWhatIf(payload) {
       return requestJson("/api/insights/simulate", {
         method: "POST",
